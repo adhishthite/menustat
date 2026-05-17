@@ -33,6 +33,7 @@ struct SystemSnapshot {
     let cpu: CPUSnapshot
     let coreCount: Int
     let memory: MemorySnapshot
+    let gpu: GPUSnapshot
     let pressure: MemoryPressure
     let fans: FanSnapshot
     let apps: AppUsageSnapshot
@@ -40,13 +41,14 @@ struct SystemSnapshot {
     let updatedAt: Date
 
     var menuTitle: String {
-        "CPU \(cpu.total.percentString)  RAM \(memory.usedPercent.percentString)"
+        "CPU \(cpu.total.percentString)  RAM \(memory.usedPercent.percentString)  GPU \(gpu.tileValue)"
     }
 
     static let empty = SystemSnapshot(
         cpu: .empty,
         coreCount: ProcessInfo.processInfo.processorCount,
         memory: .unavailable(total: ProcessInfo.processInfo.physicalMemory),
+        gpu: .unavailable("Checking GPU counters"),
         pressure: .normal,
         fans: .unavailable("Checking fan sensors"),
         apps: .empty,
@@ -58,12 +60,64 @@ struct SystemSnapshot {
         cpu: .empty,
         coreCount: ProcessInfo.processInfo.processorCount,
         memory: .unavailable(total: ProcessInfo.processInfo.physicalMemory),
+        gpu: .unavailable("MenuStat is designed for Apple Silicon Macs only."),
         pressure: .normal,
         fans: .unavailable("MenuStat is designed for Apple Silicon Macs only."),
         apps: .empty,
         uptime: ProcessInfo.processInfo.systemUptime,
         updatedAt: Date()
     )
+}
+
+struct GPUSnapshot {
+    let utilization: Double?
+    let rendererUtilization: Double?
+    let tilerUtilization: Double?
+    let memoryBytes: UInt64?
+    let coreCount: Int?
+    let model: String?
+    let message: String?
+    let source: String
+
+    var tileValue: String {
+        utilization?.percentString ?? "--"
+    }
+
+    var tileCaption: String {
+        if let coreCount {
+            return "\(coreCount) CORES"
+        }
+        return "AGX"
+    }
+
+    var statusTitle: String {
+        guard let utilization else { return "Unavailable" }
+        switch utilization {
+        case ..<0.30:
+            return "Idle"
+        case ..<0.70:
+            return "Active"
+        default:
+            return "Heavy"
+        }
+    }
+
+    var detail: String {
+        message ?? "AGX accelerator counters"
+    }
+
+    static func unavailable(_ message: String, source: String = "IORegistry") -> GPUSnapshot {
+        GPUSnapshot(
+            utilization: nil,
+            rendererUtilization: nil,
+            tilerUtilization: nil,
+            memoryBytes: nil,
+            coreCount: nil,
+            model: nil,
+            message: message,
+            source: source
+        )
+    }
 }
 
 struct CPUSnapshot {
@@ -298,6 +352,7 @@ final class SystemSampler {
     private var previousCPULoad: host_cpu_load_info?
     private var previousCoreLoads: [host_cpu_load_info] = []
     private let fanReader = SMCFanReader()
+    private let gpuReader = GPUReader()
 
     func sample() -> SystemSnapshot {
         let memory = sampleMemory()
@@ -305,6 +360,7 @@ final class SystemSampler {
             cpu: sampleCPU(),
             coreCount: ProcessInfo.processInfo.processorCount,
             memory: memory,
+            gpu: gpuReader.readGPU(),
             pressure: pressure(for: memory),
             fans: fanReader.readFans(),
             apps: sampleAppUsage(totalMemory: memory.total),
@@ -503,6 +559,85 @@ final class SystemSampler {
         return name
             .replacingOccurrences(of: ".app", with: "")
             .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+}
+
+final class GPUReader {
+    func readGPU() -> GPUSnapshot {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/sbin/ioreg")
+        process.arguments = ["-r", "-c", "AGXAccelerator", "-d", "1"]
+
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = Pipe()
+
+        do {
+            try process.run()
+        } catch {
+            return .unavailable("GPU counters are not available.", source: "AGXAccelerator")
+        }
+
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
+
+        guard let output = String(data: data, encoding: .utf8), !output.isEmpty else {
+            return .unavailable("No AGX accelerator entry was found.", source: "AGXAccelerator")
+        }
+
+        return parseIORegOutput(output)
+    }
+
+    func parseIORegOutput(_ output: String) -> GPUSnapshot {
+        guard output.contains("AGXAccelerator") else {
+            return .unavailable("No AGX accelerator entry was found.", source: "AGXAccelerator")
+        }
+
+        let utilization = percentValue(named: "Device Utilization %", in: output)
+        let renderer = percentValue(named: "Renderer Utilization %", in: output)
+        let tiler = percentValue(named: "Tiler Utilization %", in: output)
+        let memoryBytes = integerValue(named: "In use system memory", in: output).map(UInt64.init)
+        let coreCount = integerValue(named: "gpu-core-count", in: output)
+        let model = stringValue(named: "model", in: output)
+
+        guard utilization != nil || renderer != nil || tiler != nil else {
+            return .unavailable("AGX counters were found, but utilization is not exposed.", source: "AGXAccelerator")
+        }
+
+        return GPUSnapshot(
+            utilization: utilization,
+            rendererUtilization: renderer,
+            tilerUtilization: tiler,
+            memoryBytes: memoryBytes,
+            coreCount: coreCount,
+            model: model,
+            message: nil,
+            source: "AGXAccelerator"
+        )
+    }
+
+    private func percentValue(named name: String, in output: String) -> Double? {
+        integerValue(named: name, in: output).map { max(0, min(1, Double($0) / 100)) }
+    }
+
+    private func integerValue(named name: String, in output: String) -> Int? {
+        let pattern = "\"\(NSRegularExpression.escapedPattern(for: name))\"\\s*=\\s*(\\d+)"
+        return firstMatch(pattern: pattern, in: output).flatMap(Int.init)
+    }
+
+    private func stringValue(named name: String, in output: String) -> String? {
+        let pattern = "\"\(NSRegularExpression.escapedPattern(for: name))\"\\s*=\\s*\"([^\"]+)\""
+        return firstMatch(pattern: pattern, in: output)
+    }
+
+    private func firstMatch(pattern: String, in output: String) -> String? {
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return nil }
+        let range = NSRange(output.startIndex..<output.endIndex, in: output)
+        guard let match = regex.firstMatch(in: output, range: range),
+              match.numberOfRanges > 1,
+              let valueRange = Range(match.range(at: 1), in: output)
+        else { return nil }
+        return String(output[valueRange])
     }
 }
 

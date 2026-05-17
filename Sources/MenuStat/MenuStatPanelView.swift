@@ -14,6 +14,7 @@ private enum Brand {
 
     static let cpu = Color(red: 0.302, green: 0.639, blue: 1.000)
     static let mem = Color(red: 0.463, green: 0.941, blue: 0.545)
+    static let gpu = Color(red: 0.788, green: 0.553, blue: 1.000)
     static let pressure = Color(red: 1.000, green: 0.702, blue: 0.000)
     static let fan = Color(red: 0.369, green: 0.922, blue: 1.000)
     static let alert = Color(red: 1.000, green: 0.361, blue: 0.302)
@@ -21,20 +22,12 @@ private enum Brand {
 
 // MARK: - Section model
 
-private enum MetricSection: String, CaseIterable, Identifiable {
-    case cpu = "CPU"
-    case memory = "MEM"
-    case pressure = "PRES"
-    case fans = "FAN"
-
-    var id: String {
-        rawValue
-    }
-
+private extension MetricKind {
     var fullName: String {
         switch self {
         case .cpu: "PROCESSOR"
         case .memory: "MEMORY"
+        case .gpu: "GRAPHICS"
         case .pressure: "PRESSURE"
         case .fans: "COOLING"
         }
@@ -44,17 +37,9 @@ private enum MetricSection: String, CaseIterable, Identifiable {
         switch self {
         case .cpu: Brand.cpu
         case .memory: Brand.mem
+        case .gpu: Brand.gpu
         case .pressure: Brand.pressure
         case .fans: Brand.fan
-        }
-    }
-
-    var index: String {
-        switch self {
-        case .cpu: "01"
-        case .memory: "02"
-        case .pressure: "03"
-        case .fans: "04"
         }
     }
 }
@@ -85,13 +70,16 @@ private extension View {
 
 struct MenuStatPanelView: View {
     let snapshot: SystemSnapshot
-    @State private var activeSection: MetricSection = .cpu
+    @ObservedObject var preferences: DisplayPreferences
+    @State private var activeSection: MetricKind = .cpu
 
     var body: some View {
         VStack(spacing: 0) {
             HeaderRow(snapshot: snapshot)
             Hairline()
-            MetricStrip(snapshot: snapshot, active: $activeSection)
+            DisplayControls(preferences: preferences)
+            Hairline()
+            MetricStrip(snapshot: snapshot, preferences: preferences, active: $activeSection)
             Hairline()
             DetailPane(section: activeSection, snapshot: snapshot)
         }
@@ -101,6 +89,10 @@ struct MenuStatPanelView: View {
                 .stroke(Brand.lineHi, lineWidth: 1)
                 .allowsHitTesting(false)
         )
+        .onAppear(perform: ensureActiveSectionVisible)
+        .onReceive(preferences.$visibleSections) { _ in
+            ensureActiveSectionVisible()
+        }
     }
 
     private var panelBackground: some View {
@@ -110,6 +102,11 @@ struct MenuStatPanelView: View {
                 .opacity(0.55)
             VignetteOverlay()
         }
+    }
+
+    private func ensureActiveSectionVisible() {
+        guard !preferences.isVisible(activeSection) else { return }
+        activeSection = preferences.visibleSectionsInDisplayOrder().first ?? .cpu
     }
 }
 
@@ -131,7 +128,7 @@ private struct HeaderRow: View {
         HStack(alignment: .center, spacing: 10) {
             LiveryBar(tint: Brand.cpu)
 
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: 5) {
                 HStack(spacing: 6) {
                     Text("MENUSTAT")
                         .font(.system(size: 13, weight: .black, design: .monospaced))
@@ -159,7 +156,7 @@ private struct HeaderRow: View {
 
             Spacer()
 
-            VStack(alignment: .trailing, spacing: 2) {
+            VStack(alignment: .trailing, spacing: 5) {
                 Text(clockText)
                     .numeric(15, weight: .bold)
                     .onReceive(clock) { now = $0 }
@@ -167,8 +164,8 @@ private struct HeaderRow: View {
                     .microLabel(Brand.mute)
             }
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 11)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 15)
     }
 
     private func timeAgo(from date: Date) -> String {
@@ -204,55 +201,94 @@ private struct StatusDot: View {
 
 // MARK: - Metric strip
 
+private struct DisplayControls: View {
+    @ObservedObject var preferences: DisplayPreferences
+
+    var body: some View {
+        VStack(spacing: 11) {
+            HStack(spacing: 12) {
+                Text("MENU")
+                    .microLabel(Brand.micro)
+                Picker("", selection: $preferences.primaryMetric) {
+                    ForEach(MetricKind.allCases) { section in
+                        Text(section.shortTitle).tag(section)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+            }
+
+            HStack(spacing: 12) {
+                Text("SHOW")
+                    .microLabel(Brand.micro)
+                HStack(spacing: 6) {
+                    ForEach(MetricKind.allCases) { section in
+                        SectionToggle(
+                            section: section,
+                            isOn: preferences.isVisible(section),
+                            action: {
+                                preferences.setVisible(!preferences.isVisible(section), for: section)
+                            }
+                        )
+                    }
+                }
+                Spacer(minLength: 0)
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .background(Brand.surface.opacity(0.72))
+    }
+}
+
+private struct SectionToggle: View {
+    let section: MetricKind
+    let isOn: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Text(section.shortTitle)
+                .font(.system(size: 9, weight: .bold, design: .monospaced))
+                .foregroundStyle(isOn ? Brand.bg : Brand.mute)
+                .lineLimit(1)
+                .minimumScaleFactor(0.65)
+                .frame(width: 38, height: 24)
+                .background(isOn ? section.tint : Brand.bg)
+                .overlay(Rectangle().stroke(isOn ? section.tint : Brand.lineHi, lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+    }
+}
+
 private struct MetricStrip: View {
     let snapshot: SystemSnapshot
-    @Binding var active: MetricSection
+    @ObservedObject var preferences: DisplayPreferences
+    @Binding var active: MetricKind
 
     var body: some View {
         HStack(spacing: 0) {
-            MetricTile(
-                section: .cpu,
-                value: snapshot.cpu.total.percentString,
-                progress: snapshot.cpu.total,
-                caption: "\(snapshot.coreCount) CORES",
-                active: active == .cpu,
-                onTap: { active = .cpu }
-            )
-            VRule()
-            MetricTile(
-                section: .memory,
-                value: snapshot.memory.usedPercent.percentString,
-                progress: snapshot.memory.usedPercent,
-                caption: snapshot.memory.used.formattedBytesShort,
-                active: active == .memory,
-                onTap: { active = .memory }
-            )
-            VRule()
-            MetricTile(
-                section: .pressure,
-                value: snapshot.pressure.shortTitle,
-                progress: snapshot.memory.usedPercent,
-                caption: "RAM STATE",
-                active: active == .pressure,
-                tint: snapshot.pressure.tint,
-                onTap: { active = .pressure }
-            )
-            VRule()
-            MetricTile(
-                section: .fans,
-                value: snapshot.fans.tileValue,
-                progress: snapshot.fans.averageRangePercent,
-                caption: snapshot.fans.tileCaption,
-                active: active == .fans,
-                onTap: { active = .fans }
-            )
+            ForEach(Array(preferences.visibleSectionsInDisplayOrder().enumerated()), id: \.element.id) { index, section in
+                MetricTile(
+                    section: section,
+                    value: section.tileValue(snapshot),
+                    progress: section.progress(snapshot),
+                    caption: section.tileCaption(snapshot),
+                    active: active == section,
+                    tint: section == .pressure ? snapshot.pressure.tint : nil,
+                    onTap: { active = section }
+                )
+                if index < preferences.visibleSectionsInDisplayOrder().count - 1 {
+                    VRule()
+                }
+            }
         }
-        .frame(height: 96)
+        .frame(height: 112)
     }
 }
 
 private struct MetricTile: View {
-    let section: MetricSection
+    let section: MetricKind
     let value: String
     let progress: Double
     let caption: String
@@ -273,20 +309,10 @@ private struct MetricTile: View {
                 Spacer(minLength: 0)
             }
 
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(spacing: 4) {
-                    Text(section.index)
-                        .microLabel(Brand.micro)
-                    Text(section.rawValue)
-                        .microLabel(active ? accent : Brand.mute)
-                    Spacer()
-                    if active {
-                        Text("●")
-                            .font(.system(size: 6))
-                            .foregroundStyle(accent)
-                    }
-                }
-                .padding(.top, 4)
+            VStack(alignment: .leading, spacing: 9) {
+                Text(section.shortTitle)
+                    .microLabel(active ? accent : Brand.mute)
+                    .padding(.top, 6)
 
                 Text(value)
                     .numeric(22, weight: .heavy, tint: active ? Brand.text : Brand.text.opacity(0.78))
@@ -299,8 +325,8 @@ private struct MetricTile: View {
                     .microLabel(Brand.mute)
                     .lineLimit(1)
             }
-            .padding(.horizontal, 11)
-            .padding(.bottom, 8)
+            .padding(.horizontal, 13)
+            .padding(.bottom, 11)
 
             if active {
                 CornerBrackets(tint: accent)
@@ -375,7 +401,7 @@ private struct CornerBrackets: View {
 // MARK: - Detail pane
 
 private struct DetailPane: View {
-    let section: MetricSection
+    let section: MetricKind
     let snapshot: SystemSnapshot
 
     var body: some View {
@@ -383,20 +409,22 @@ private struct DetailPane: View {
             DetailHeader(section: section, snapshot: snapshot)
             Hairline()
             ScrollView {
-                VStack(alignment: .leading, spacing: 14) {
+                VStack(alignment: .leading, spacing: 18) {
                     switch section {
                     case .cpu:
                         CPUDetail(snapshot: snapshot)
                     case .memory:
                         MemoryDetail(snapshot: snapshot)
+                    case .gpu:
+                        GPUDetail(snapshot: snapshot)
                     case .pressure:
                         PressureDetail(snapshot: snapshot)
                     case .fans:
                         FanDetail(snapshot: snapshot)
                     }
                 }
-                .padding(.horizontal, 14)
-                .padding(.vertical, 14)
+                .padding(.horizontal, 18)
+                .padding(.vertical, 18)
             }
             .scrollIndicators(.never)
         }
@@ -406,40 +434,32 @@ private struct DetailPane: View {
 }
 
 private struct DetailHeader: View {
-    let section: MetricSection
+    let section: MetricKind
     let snapshot: SystemSnapshot
 
     private var valueText: String {
-        switch section {
-        case .cpu: snapshot.cpu.total.percentString
-        case .memory: snapshot.memory.usedPercent.percentString
-        case .pressure: snapshot.pressure.shortTitle
-        case .fans: snapshot.fans.tileValue
-        }
+        section.tileValue(snapshot)
     }
 
     private var subtitle: String {
         switch section {
         case .cpu: "LOAD DISTRIBUTION · PER-CORE ACTIVITY"
         case .memory: "UNIFIED MEMORY · PAGE STATE"
+        case .gpu: "AGX UTILIZATION · GRAPHICS MEMORY"
         case .pressure: snapshot.pressure.detail.uppercased()
         case .fans: "RPM TELEMETRY · COOLING CURVE"
         }
     }
 
     var body: some View {
-        HStack(alignment: .center, spacing: 10) {
+        HStack(alignment: .center, spacing: 12) {
             Rectangle()
                 .fill(section.tint)
-                .frame(width: 3, height: 28)
+                .frame(width: 3, height: 32)
 
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 6) {
-                    Text(section.index)
-                        .microLabel(Brand.micro)
-                    Text(section.fullName)
-                        .microLabel(section.tint)
-                }
+            VStack(alignment: .leading, spacing: 5) {
+                Text(section.fullName)
+                    .microLabel(section.tint)
                 Text(subtitle)
                     .microLabel(Brand.mute)
                     .lineLimit(1)
@@ -452,8 +472,8 @@ private struct DetailHeader: View {
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 11)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 15)
     }
 }
 
@@ -463,7 +483,7 @@ private struct CPUDetail: View {
     let snapshot: SystemSnapshot
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 20) {
             MeterRow(label: "USER", value: snapshot.cpu.user, tint: Brand.cpu)
             MeterRow(label: "SYSTEM", value: snapshot.cpu.system, tint: Brand.pressure)
             MeterRow(label: "IDLE", value: snapshot.cpu.idle, tint: Brand.mute)
@@ -490,7 +510,7 @@ private struct MemoryDetail: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 20) {
             MeterRow(label: "USED", value: memory.usedPercent, tint: Brand.mem)
             MeterRow(label: "AVAILABLE", value: memory.freePercent, tint: Brand.fan)
 
@@ -511,11 +531,56 @@ private struct MemoryDetail: View {
     }
 }
 
+private struct GPUDetail: View {
+    let snapshot: SystemSnapshot
+
+    private var gpu: GPUSnapshot {
+        snapshot.gpu
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            if let utilization = gpu.utilization {
+                MeterRow(label: "DEVICE", value: utilization, tint: Brand.gpu)
+                MeterRow(label: "RENDER", value: gpu.rendererUtilization ?? 0, tint: Brand.cpu)
+                MeterRow(label: "TILER", value: gpu.tilerUtilization ?? 0, tint: Brand.fan)
+
+                DatumGrid(
+                    items: [
+                        DatumItem(label: "STATE", value: gpu.statusTitle.uppercased()),
+                        DatumItem(label: "CORES", value: gpu.coreCount.map(String.init) ?? "--"),
+                        DatumItem(label: "MEM", value: gpu.memoryBytes?.formattedBytesShort ?? "--"),
+                        DatumItem(label: "MODEL", value: gpu.model ?? "Apple GPU"),
+                        DatumItem(label: "SOURCE", value: gpu.source),
+                        DatumItem(label: "LOAD", value: gpu.tileValue)
+                    ],
+                    columns: 3
+                )
+            } else {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("NO GPU TELEMETRY")
+                        .microLabel(Brand.alert)
+                    Text(gpu.detail)
+                        .bodyMono(Brand.mute)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text("SOURCE · \(gpu.source.uppercased())")
+                        .microLabel(Brand.micro)
+                }
+                .padding(11)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .overlay(Rectangle().stroke(Brand.alert.opacity(0.45), lineWidth: 1))
+            }
+
+            TopAppList(title: "TOP PROCESSES · CPU PROXY", apps: snapshot.apps.topCPU, kind: .cpu)
+        }
+    }
+}
+
 private struct PressureDetail: View {
     let snapshot: SystemSnapshot
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 20) {
             PressureGauge(pressure: snapshot.pressure, usedPercent: snapshot.memory.usedPercent)
 
             DatumGrid(items: [
@@ -537,7 +602,7 @@ private struct FanDetail: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 20) {
             if fans.speeds.isEmpty {
                 EmptyFanReadout(fans: fans)
             } else {
@@ -808,7 +873,7 @@ private struct DatumCell: View {
                 .lineLimit(1)
                 .minimumScaleFactor(0.65)
         }
-        .padding(8)
+        .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
@@ -850,7 +915,7 @@ private struct TopAppList: View {
                     .microLabel(Brand.micro)
                     .frame(maxWidth: .infinity, minHeight: 28)
             } else {
-                VStack(spacing: 1) {
+                VStack(spacing: 2) {
                     ForEach(Array(apps.prefix(8).enumerated()), id: \.element.id) { index, app in
                         TopAppRow(rank: index + 1, app: app, kind: kind, ratio: value(for: app) / max(maxValue, 1))
                     }
@@ -902,10 +967,10 @@ private struct TopAppRow: View {
                     .bodyMono(Brand.text, weight: .bold)
                     .monospacedDigit()
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
         }
-        .frame(height: 26)
+        .frame(height: 30)
     }
 }
 
@@ -958,6 +1023,38 @@ private struct VignetteOverlay: View {
 }
 
 // MARK: - Snapshot helpers
+
+private extension MetricKind {
+    func tileValue(_ snapshot: SystemSnapshot) -> String {
+        switch self {
+        case .cpu: snapshot.cpu.total.percentString
+        case .memory: snapshot.memory.usedPercent.percentString
+        case .gpu: snapshot.gpu.tileValue
+        case .pressure: snapshot.pressure.shortTitle
+        case .fans: snapshot.fans.tileValue
+        }
+    }
+
+    func progress(_ snapshot: SystemSnapshot) -> Double {
+        switch self {
+        case .cpu: snapshot.cpu.total
+        case .memory: snapshot.memory.usedPercent
+        case .gpu: snapshot.gpu.utilization ?? 0
+        case .pressure: snapshot.memory.usedPercent
+        case .fans: snapshot.fans.averageRangePercent
+        }
+    }
+
+    func tileCaption(_ snapshot: SystemSnapshot) -> String {
+        switch self {
+        case .cpu: "\(snapshot.coreCount) CORES"
+        case .memory: snapshot.memory.used.formattedBytesShort
+        case .gpu: snapshot.gpu.tileCaption
+        case .pressure: "RAM STATE"
+        case .fans: snapshot.fans.tileCaption
+        }
+    }
+}
 
 private extension MemoryPressure {
     var tint: Color {

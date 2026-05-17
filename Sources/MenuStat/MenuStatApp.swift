@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import SwiftUI
 
 private var retainedAppDelegate: MenuStatAppDelegate?
@@ -30,6 +31,7 @@ struct MenuStatApp {
 
 final class MenuStatAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let sampler = SystemSampler()
+    private let displayPreferences = DisplayPreferences.shared
     private var snapshot = SystemSnapshot.empty
     private var statusItem: NSStatusItem?
     private var statusMenu: NSMenu?
@@ -38,7 +40,8 @@ final class MenuStatAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
     private var refreshTimer: Timer?
     private var localEventMonitor: Any?
     private var globalEventMonitor: Any?
-    private let panelSize = NSSize(width: 442, height: 560)
+    private var preferencesCancellable: AnyCancellable?
+    private let panelSize = NSSize(width: 442, height: 620)
     private let panelGap: CGFloat = -8
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -70,6 +73,13 @@ final class MenuStatAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
 
         setupPanel()
         installPanelEventMonitors()
+        preferencesCancellable = displayPreferences.objectWillChange.sink { [weak self] _ in
+            DispatchQueue.main.async {
+                self?.refreshStatusItem()
+                self?.refreshPanel()
+                self?.rebuildStatusMenu()
+            }
+        }
         refreshSnapshot()
         appendStatusLog("initial snapshot complete; menuItems=\(menu.items.count)")
     }
@@ -140,16 +150,42 @@ final class MenuStatAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
 
     private func refreshSnapshot() {
         snapshot = sampler.sample()
-        let cpu = Int((snapshot.cpu.total * 100).rounded())
-        statusItem?.button?.title = String(format: "▍%02d%%", cpu)
-        statusItem?.button?.toolTip = "MenuStat — \(snapshot.menuTitle)"
+        refreshStatusItem()
         refreshPanel()
         rebuildStatusMenu()
     }
 
+    private func refreshStatusItem() {
+        statusItem?.button?.title = menuBarTitle()
+        statusItem?.button?.toolTip = "MenuStat — \(snapshot.menuTitle)"
+    }
+
+    private func menuBarTitle() -> String {
+        switch displayPreferences.primaryMetric {
+        case .cpu:
+            compactTitle(value: snapshot.cpu.total.percentString)
+        case .memory:
+            compactTitle(value: snapshot.memory.usedPercent.percentString)
+        case .gpu:
+            compactTitle(value: snapshot.gpu.tileValue)
+        case .pressure:
+            "▍\(snapshot.pressure.shortMenuTitle)"
+        case .fans:
+            compactTitle(value: snapshot.fans.speeds.isEmpty ? "--" : snapshot.fans.percentTitle)
+        }
+    }
+
+    private func compactTitle(value: String) -> String {
+        "▍\(value)"
+    }
+
     private func setupPanel() {
         let hosting = NSHostingController(
-            rootView: MenuStatPanelRoot(snapshot: snapshot, height: panelSize.height)
+            rootView: MenuStatPanelRoot(
+                snapshot: snapshot,
+                preferences: displayPreferences,
+                height: panelSize.height
+            )
         )
         hosting.view.frame = NSRect(origin: .zero, size: panelSize)
 
@@ -173,7 +209,11 @@ final class MenuStatAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
     }
 
     private func refreshPanel() {
-        hostingController?.rootView = MenuStatPanelRoot(snapshot: snapshot, height: panelSize.height)
+        hostingController?.rootView = MenuStatPanelRoot(
+            snapshot: snapshot,
+            preferences: displayPreferences,
+            height: panelSize.height
+        )
     }
 
     private func panelFrame() -> NSRect {
@@ -310,13 +350,24 @@ private final class MenuStatStatusPanel: NSPanel {
 
 private struct MenuStatPanelRoot: View {
     let snapshot: SystemSnapshot
+    @ObservedObject var preferences: DisplayPreferences
     let height: CGFloat
 
     var body: some View {
         ZStack(alignment: .top) {
-            MenuStatPanelView(snapshot: snapshot)
+            MenuStatPanelView(snapshot: snapshot, preferences: preferences)
         }
         .frame(width: 430, height: height - 12, alignment: .top)
         .padding(6)
+    }
+}
+
+private extension MemoryPressure {
+    var shortMenuTitle: String {
+        switch self {
+        case .normal: "OK"
+        case .moderate: "MID"
+        case .high: "HI"
+        }
     }
 }
