@@ -15,9 +15,9 @@ A lightweight macOS menu-bar system monitor for Apple Silicon — CPU, unified m
 - **Menu-bar resident** — runs as an `LSUIElement` (no Dock icon, no window).
 - **Refreshes every 5 s** — low overhead, sampled on a single timer.
 
-## Screenshot
+## Screenshots
 
-_Coming soon._
+![MenuStat panel showing CPU, memory, GPU, pressure, and fan metrics](docs/screenshots/menustat-panel.png)
 
 ---
 
