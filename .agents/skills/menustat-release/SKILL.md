@@ -1,17 +1,16 @@
 ---
 name: menustat-release
-description: Cut MenuStat releases from /Users/adhish/Documents/MenuStat, including docs, signed/notarized app packaging, DMG and zip assets, GitHub release upload, and verification.
+description: Cut MenuStat releases from the repository root, including docs, signed/notarized app packaging, DMG and zip assets, GitHub release upload, and verification.
 ---
 
 # MenuStat Release Skill
 
-Use this skill when working on the local MenuStat repo, especially for release
-prep, install docs, notarization, GitHub Releases, screenshots, app icon, or
-launch-at-login distribution work.
+Use this skill when working from the MenuStat repository root, especially for
+release prep, install docs, notarization, GitHub Releases, screenshots, app
+icon, or launch-at-login distribution work.
 
 ## Repo
 
-- Path: `/Users/adhish/Documents/MenuStat`
 - GitHub: `adhishthite/menustat`
 - Bundle ID: `com.adhishthite.MenuStat`
 - Team ID: `ATQ45ZSG3M`
