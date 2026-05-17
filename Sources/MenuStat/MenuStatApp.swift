@@ -46,8 +46,8 @@ final class MenuStatAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
 
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         item.isVisible = true
-        item.button?.title = "MS"
-        item.button?.font = NSFont.monospacedSystemFont(ofSize: 12, weight: .bold)
+        item.button?.title = "▍MS"
+        item.button?.font = NSFont.monospacedSystemFont(ofSize: 11, weight: .bold)
         item.button?.isEnabled = true
         item.button?.toolTip = "MenuStat"
         item.button?.target = self
@@ -140,7 +140,9 @@ final class MenuStatAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
 
     private func refreshSnapshot() {
         snapshot = sampler.sample()
-        statusItem?.button?.toolTip = "MenuStat - \(snapshot.menuTitle)"
+        let cpu = Int((snapshot.cpu.total * 100).rounded())
+        statusItem?.button?.title = String(format: "▍%02d%%", cpu)
+        statusItem?.button?.toolTip = "MenuStat — \(snapshot.menuTitle)"
         refreshPanel()
         rebuildStatusMenu()
     }
