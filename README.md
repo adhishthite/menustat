@@ -33,12 +33,14 @@ A lightweight macOS menu-bar system monitor for Apple Silicon — CPU, unified m
 ## Install
 
 1. Download the latest release:
-   [MenuStat-0.1.1.zip](https://github.com/adhishthite/menustat/releases/download/v0.1.1/MenuStat-0.1.1.zip)
-2. Unzip it.
-3. Move `MenuStat.app` to your `Applications` folder.
+   [MenuStat-0.1.2.dmg](https://github.com/adhishthite/menustat/releases/download/v0.1.2/MenuStat-0.1.2.dmg)
+2. Open the DMG.
+3. Drag `MenuStat.app` into `Applications`.
 4. Open `MenuStat.app`.
 
 The app appears as **`MS`** in your menu bar. Click it for the panel; click outside or hit the menu-bar item again to dismiss.
+
+To start MenuStat automatically when you sign in: right-click the menu-bar item → enable **Launch at Login**.
 
 To quit: right-click the menu-bar item → *Quit*.
 

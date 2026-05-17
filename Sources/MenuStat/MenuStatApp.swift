@@ -1,5 +1,6 @@
 import AppKit
 import Combine
+import ServiceManagement
 import SwiftUI
 
 private var retainedAppDelegate: MenuStatAppDelegate?
@@ -130,6 +131,20 @@ final class MenuStatAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
     }
 
     @objc
+    func toggleLaunchAtLogin(_ sender: Any?) {
+        do {
+            if isLaunchAtLoginEnabled {
+                try SMAppService.mainApp.unregister()
+            } else {
+                try SMAppService.mainApp.register()
+            }
+        } catch {
+            showLaunchAtLoginError(error)
+        }
+        rebuildStatusMenu()
+    }
+
+    @objc
     func quitMenuStat(_ sender: Any?) {
         NSApp.terminate(nil)
     }
@@ -191,8 +206,36 @@ final class MenuStatAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
         "Copyright © \(Self.currentYear) Adhish Thite"
     }
 
+    private var isLaunchAtLoginEnabled: Bool {
+        SMAppService.mainApp.status == .enabled
+    }
+
+    private var launchAtLoginTitle: String {
+        switch SMAppService.mainApp.status {
+        case .enabled:
+            "Launch at Login"
+        case .requiresApproval:
+            "Launch at Login (Needs Approval)"
+        case .notRegistered, .notFound:
+            "Launch at Login"
+        @unknown default:
+            "Launch at Login"
+        }
+    }
+
     private static var currentYear: Int {
         Calendar.current.component(.year, from: Date())
+    }
+
+    private func showLaunchAtLoginError(_ error: Error) {
+        NSApp.activate(ignoringOtherApps: true)
+
+        let alert = NSAlert()
+        alert.messageText = "Could Not Update Launch at Login"
+        alert.informativeText = error.localizedDescription
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "OK")
+        alert.runModal()
     }
 
     private func setupPanel() {
@@ -316,6 +359,16 @@ final class MenuStatAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
         openItem.target = self
         openItem.isEnabled = true
         menu.addItem(openItem)
+
+        let launchAtLoginItem = NSMenuItem(
+            title: launchAtLoginTitle,
+            action: #selector(toggleLaunchAtLogin(_:)),
+            keyEquivalent: ""
+        )
+        launchAtLoginItem.target = self
+        launchAtLoginItem.state = isLaunchAtLoginEnabled ? .on : .off
+        launchAtLoginItem.isEnabled = true
+        menu.addItem(launchAtLoginItem)
 
         let aboutItem = NSMenuItem(title: "About MenuStat", action: #selector(showAbout(_:)), keyEquivalent: "")
         aboutItem.target = self

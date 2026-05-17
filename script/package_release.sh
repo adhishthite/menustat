@@ -21,6 +21,7 @@ APP_BINARY="$APP_MACOS/$APP_NAME"
 INFO_PLIST="$APP_CONTENTS/Info.plist"
 APP_ICON="$ROOT_DIR/Resources/AppIcon.icns"
 ZIP_PATH="$DIST_DIR/$APP_NAME-$MARKETING_VERSION.zip"
+DMG_PATH="$DIST_DIR/$APP_NAME-$MARKETING_VERSION.dmg"
 NOTARY_ZIP_PATH="$DIST_DIR/$APP_NAME-$MARKETING_VERSION-notary.zip"
 CURRENT_YEAR="$(date +%Y)"
 
@@ -83,12 +84,62 @@ package_zip() {
   /usr/bin/ditto -c -k --keepParent "$APP_BUNDLE" "$output_path"
 }
 
+submit_for_notarization() {
+  local artifact_path="$1"
+  local artifact_name
+  artifact_name="$(basename "$artifact_path")"
+
+  echo "Submitting $artifact_name to Apple notary service with keychain profile: $NOTARY_PROFILE"
+  /usr/bin/xcrun notarytool submit "$artifact_path" \
+    --keychain-profile "$NOTARY_PROFILE" \
+    --team-id "$TEAM_ID" \
+    --wait
+}
+
+package_dmg() {
+  local output_path="$1"
+  local dmg_root="$WORK_DIR/dmg-root"
+
+  rm -rf "$dmg_root"
+  rm -f "$output_path"
+  mkdir -p "$dmg_root"
+  /usr/bin/ditto "$APP_BUNDLE" "$dmg_root/$APP_NAME.app"
+  /bin/ln -s /Applications "$dmg_root/Applications"
+
+  /usr/bin/hdiutil create \
+    -volname "$APP_NAME $MARKETING_VERSION" \
+    -srcfolder "$dmg_root" \
+    -ov \
+    -format UDZO \
+    "$output_path"
+
+  for attempt in 1 2 3; do
+    if /usr/bin/hdiutil verify "$output_path"; then
+      return
+    fi
+    sleep "$attempt"
+  done
+
+  /usr/bin/hdiutil verify "$output_path"
+}
+
+sign_dmg() {
+  local dmg_path="$1"
+
+  echo "Signing DMG with $SIGNING_IDENTITY"
+  /usr/bin/codesign \
+    --force \
+    --timestamp \
+    --sign "$SIGNING_IDENTITY" \
+    "$dmg_path"
+}
+
 require_signing_identity
 
 rm -rf "$WORK_DIR"
 mkdir -p "$APP_MACOS" "$APP_RESOURCES"
 mkdir -p "$DIST_DIR"
-rm -f "$ZIP_PATH" "$NOTARY_ZIP_PATH"
+rm -f "$ZIP_PATH" "$DMG_PATH" "$NOTARY_ZIP_PATH"
 
 echo "Building $APP_NAME $MARKETING_VERSION ($BUILD_NUMBER)"
 swift build -c release
@@ -110,14 +161,10 @@ echo "Verifying signature"
 /usr/bin/codesign --verify --deep --strict --verbose=2 "$APP_BUNDLE"
 
 if [[ -n "$NOTARY_PROFILE" ]]; then
-  echo "Submitting to Apple notary service with keychain profile: $NOTARY_PROFILE"
   package_zip "$NOTARY_ZIP_PATH"
-  /usr/bin/xcrun notarytool submit "$NOTARY_ZIP_PATH" \
-    --keychain-profile "$NOTARY_PROFILE" \
-    --team-id "$TEAM_ID" \
-    --wait
+  submit_for_notarization "$NOTARY_ZIP_PATH"
 
-  echo "Stapling notarization ticket"
+  echo "Stapling notarization ticket to app"
   /usr/bin/xcrun stapler staple "$APP_BUNDLE"
   /usr/sbin/spctl --assess --type execute --verbose "$APP_BUNDLE"
   rm -f "$NOTARY_ZIP_PATH"
@@ -127,6 +174,16 @@ else
 fi
 
 package_zip "$ZIP_PATH"
+package_dmg "$DMG_PATH"
+sign_dmg "$DMG_PATH"
+
+if [[ -n "$NOTARY_PROFILE" ]]; then
+  submit_for_notarization "$DMG_PATH"
+  echo "Stapling notarization ticket to DMG"
+  /usr/bin/xcrun stapler staple "$DMG_PATH"
+  /usr/sbin/spctl --assess --type open --context context:primary-signature --verbose "$DMG_PATH"
+fi
 
 echo "Release app: $APP_BUNDLE"
 echo "Release zip: $ZIP_PATH"
+echo "Release dmg: $DMG_PATH"
