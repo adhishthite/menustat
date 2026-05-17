@@ -33,7 +33,7 @@ A lightweight macOS menu-bar system monitor for Apple Silicon — CPU, unified m
 ## Install
 
 1. Download the latest release:
-   [MenuStat-0.1.3.dmg](https://github.com/adhishthite/menustat/releases/download/v0.1.3/MenuStat-0.1.3.dmg)
+   [MenuStat-0.1.4.dmg](https://github.com/adhishthite/menustat/releases/download/v0.1.4/MenuStat-0.1.4.dmg)
 2. Open the DMG.
 3. Drag `MenuStat.app` into `Applications`.
 4. Open `MenuStat.app`.
@@ -78,7 +78,7 @@ For source builds, you can also quit from the terminal with `pkill -x MenuStat`.
 | Target | What it does |
 |---|---|
 | `make run` | Build (release), bundle into `MenuStat.app`, codesign locally, launch. |
-| `make package-release` | Build, Developer ID sign, optionally notarize, and zip a distributable `.app`. |
+| `make package-release` | Build, Developer ID sign, optionally notarize, then create DMG and zip release artifacts. |
 | `make build` / `make release` | Debug / release build only — no bundle, no launch. |
 | `make strict` | Release build with `-warnings-as-errors`. The "type-check + compile" gate. |
 | `make test` | Run XCTest unit tests (parallel). |
@@ -113,7 +113,7 @@ For source builds, you can also quit from the terminal with `pkill -x MenuStat`.
 │   └── pre-commit                   # Git hook: format + lint staged Swift files
 ├── .swiftlint.yml                   # Lint config (strict mode in CI)
 ├── .swiftformat                     # Format config (4-space, 140-col, sorted imports)
-└── .github/workflows/ci.yml         # GitHub Actions: macos-14, runs `make check`
+└── .github/workflows/               # GitHub Actions: CI plus signed/notarized release packaging
 ```
 
 ---
@@ -186,7 +186,10 @@ That creates:
 ```text
 dist/work/MenuStat.app
 dist/MenuStat-0.1.0.zip
+dist/MenuStat-0.1.0.dmg
 ```
+
+Published downloads live under GitHub Releases. The GitHub Packages tab is intentionally unused because MenuStat ships as notarized macOS app artifacts, not as a package-registry dependency.
 
 The unsigned/notarization-sensitive values can be overridden:
 
