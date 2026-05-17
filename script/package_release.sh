@@ -3,8 +3,8 @@ set -euo pipefail
 
 APP_NAME="${APP_NAME:-MenuStat}"
 BUNDLE_ID="${BUNDLE_ID:-com.adhishthite.MenuStat}"
-TEAM_ID="${TEAM_ID:-ATQ45ZSG3M}"
-SIGNING_IDENTITY="${SIGNING_IDENTITY:-Developer ID Application: Adhish Thite (${TEAM_ID})}"
+TEAM_ID="${TEAM_ID:-}"
+SIGNING_IDENTITY="${SIGNING_IDENTITY:-}"
 MARKETING_VERSION="${MARKETING_VERSION:-0.1.0}"
 BUILD_NUMBER="${BUILD_NUMBER:-1}"
 MIN_SYSTEM_VERSION="${MIN_SYSTEM_VERSION:-13.0}"
@@ -26,6 +26,20 @@ NOTARY_ZIP_PATH="$DIST_DIR/$APP_NAME-$MARKETING_VERSION-notary.zip"
 CURRENT_YEAR="$(date +%Y)"
 
 require_signing_identity() {
+  if [[ -z "$SIGNING_IDENTITY" && -n "$TEAM_ID" ]]; then
+    SIGNING_IDENTITY="$(
+      /usr/bin/security find-identity -v -p codesigning |
+        /usr/bin/sed -nE "s/.*\"(Developer ID Application: .+ \\($TEAM_ID\\))\".*/\\1/p" |
+        /usr/bin/head -n 1
+    )"
+  fi
+
+  if [[ -z "$SIGNING_IDENTITY" ]]; then
+    echo "Missing signing configuration." >&2
+    echo "Set SIGNING_IDENTITY, or set TEAM_ID so the script can find a Developer ID Application identity." >&2
+    exit 1
+  fi
+
   if ! /usr/bin/security find-identity -v -p codesigning | /usr/bin/grep -Fq "$SIGNING_IDENTITY"; then
     echo "Missing signing identity: $SIGNING_IDENTITY" >&2
     echo "Open Xcode > Settings > Accounts > Manage Certificates and add Developer ID Application." >&2
@@ -88,6 +102,11 @@ submit_for_notarization() {
   local artifact_path="$1"
   local artifact_name
   artifact_name="$(basename "$artifact_path")"
+
+  if [[ -z "$TEAM_ID" ]]; then
+    echo "Missing TEAM_ID for notarization." >&2
+    exit 1
+  fi
 
   echo "Submitting $artifact_name to Apple notary service with keychain profile: $NOTARY_PROFILE"
   /usr/bin/xcrun notarytool submit "$artifact_path" \

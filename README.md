@@ -165,13 +165,13 @@ The pre-commit hook (`make install-hooks`) runs format + lint on staged `.swift`
 
 ## Release packaging
 
-MenuStat ships outside the Mac App Store as a Developer ID signed and notarized app. The release script defaults to:
+MenuStat ships outside the Mac App Store as a Developer ID signed and notarized app. The release script uses local environment variables or GitHub Actions configuration for account-specific signing values:
 
 | Setting | Value |
 |---|---|
 | Bundle ID | `com.adhishthite.MenuStat` |
-| Team ID | `ATQ45ZSG3M` |
-| Signing identity | `Developer ID Application: Adhish Thite (ATQ45ZSG3M)` |
+| Team ID | `TEAM_ID` locally, `APPLE_TEAM_ID` in GitHub Actions |
+| Signing identity | `SIGNING_IDENTITY` locally, `DEVELOPER_ID_SIGNING_IDENTITY` in GitHub Actions |
 | Minimum macOS | `13.0` |
 | Architecture | `arm64` |
 
@@ -197,15 +197,15 @@ MARKETING_VERSION=1.0.0 BUILD_NUMBER=100 make package-release
 To notarize, first store an Apple notary credential in Keychain. Use an app-specific password for the Apple ID that belongs to the Developer Team:
 
 ```bash
-xcrun notarytool store-credentials MenuStatNotary \
+xcrun notarytool store-credentials "$NOTARY_PROFILE" \
   --apple-id "YOUR_APPLE_ID_EMAIL" \
-  --team-id ATQ45ZSG3M
+  --team-id "$TEAM_ID"
 ```
 
 Then run:
 
 ```bash
-NOTARY_PROFILE=MenuStatNotary make package-release
+TEAM_ID="$TEAM_ID" NOTARY_PROFILE="$NOTARY_PROFILE" make package-release
 ```
 
 The script submits the app zip to Apple's notary service, staples the notarization ticket to `MenuStat.app`, verifies Gatekeeper assessment, then writes the final distributable zip.

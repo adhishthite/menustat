@@ -13,9 +13,10 @@ icon, or launch-at-login distribution work.
 
 - GitHub: `adhishthite/menustat`
 - Bundle ID: `com.adhishthite.MenuStat`
-- Team ID: `ATQ45ZSG3M`
-- Signing identity: `Developer ID Application: Adhish Thite (ATQ45ZSG3M)`
-- Notary profile: `MenuStatNotary`
+- Apple ID: configured in GitHub Actions secret `APPLE_ID`
+- Team ID: configured in GitHub Actions variable `APPLE_TEAM_ID`
+- Signing identity: configured in GitHub Actions variable `DEVELOPER_ID_SIGNING_IDENTITY`
+- Notary profile: configured in GitHub Actions variable `NOTARY_PROFILE`
 - Current release artifact shape: notarized `.dmg` plus `.zip`
 - CI/CD release workflow: `.github/workflows/release.yml`
 - CI/CD setup docs: `docs/releasing.md`
@@ -40,7 +41,7 @@ icon, or launch-at-login distribution work.
 
 4. Build, sign, notarize, staple, and package:
    ```bash
-   MARKETING_VERSION=X.Y.Z BUILD_NUMBER=N NOTARY_PROFILE=MenuStatNotary make package-release
+   MARKETING_VERSION=X.Y.Z BUILD_NUMBER=N TEAM_ID=<team-id> NOTARY_PROFILE=<profile> make package-release
    ```
 
 5. Verify artifacts:
@@ -85,8 +86,8 @@ icon, or launch-at-login distribution work.
 
 ## Notes
 
-- Do not ask for or print Apple passwords. The notary credential is already
-  stored in Keychain as `MenuStatNotary`.
+- Do not ask for or print Apple passwords. In CI, the notary credential is
+  created from GitHub Actions secrets and variables.
 - Prefer `.dmg` as the primary README install artifact. Keep `.zip` attached as
   an alternate asset.
 - The release script notarizes the app first, staples it, builds the DMG, signs

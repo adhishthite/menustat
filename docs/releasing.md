@@ -9,9 +9,11 @@ The workflow builds, signs, notarizes, staples, verifies, and uploads:
 - `MenuStat-X.Y.Z.zip`
 - `MenuStat-X.Y.Z-checksums.txt`
 
-## Required GitHub Secrets
+## Required GitHub Configuration
 
 Set these in **GitHub → Settings → Secrets and variables → Actions**:
+
+Secrets:
 
 | Secret | Purpose |
 |---|---|
@@ -21,21 +23,29 @@ Set these in **GitHub → Settings → Secrets and variables → Actions**:
 | `DEVELOPER_ID_CERTIFICATE_PASSWORD` | Password used when exporting the `.p12`. |
 | `KEYCHAIN_PASSWORD` | Any strong password used for the temporary CI keychain. |
 
+Variables:
+
+| Variable | Purpose |
+|---|---|
+| `APPLE_TEAM_ID` | Apple Developer Team ID used for notarization. |
+| `DEVELOPER_ID_SIGNING_IDENTITY` | Full Developer ID Application signing identity. |
+| `NOTARY_PROFILE` | Temporary keychain profile name used by the release workflow. |
+
 The app uses:
 
 | Setting | Value |
 |---|---|
 | Bundle ID | `com.adhishthite.MenuStat` |
-| Team ID | `ATQ45ZSG3M` |
-| Signing identity | `Developer ID Application: Adhish Thite (ATQ45ZSG3M)` |
-| Notary profile name | `MenuStatNotary` |
+| Team ID | GitHub Actions variable `APPLE_TEAM_ID` |
+| Signing identity | GitHub Actions variable `DEVELOPER_ID_SIGNING_IDENTITY` |
+| Notary profile name | GitHub Actions variable `NOTARY_PROFILE` |
 
 ## Export the Certificate
 
 On the Mac that has the Developer ID certificate:
 
 1. Open **Keychain Access**.
-2. Find `Developer ID Application: Adhish Thite (ATQ45ZSG3M)`.
+2. Find the Developer ID Application certificate for the configured Apple team.
 3. Expand it and select both the certificate and private key.
 4. Export as `developer-id.p12`.
 5. Choose a strong export password.
