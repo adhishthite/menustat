@@ -27,13 +27,34 @@ A lightweight macOS menu-bar system monitor for Apple Silicon — CPU, unified m
 |---|---|
 | OS | macOS 13.0 (Ventura) or later |
 | Architecture | Apple Silicon (`arm64`) only |
-| Swift | 5.9+ |
-| Xcode CLT | Latest |
-| Homebrew | For installing lint / format tools |
 
 ---
 
-## Quick start
+## Install
+
+1. Download the latest release:
+   [MenuStat-0.1.1.zip](https://github.com/adhishthite/menustat/releases/download/v0.1.1/MenuStat-0.1.1.zip)
+2. Unzip it.
+3. Move `MenuStat.app` to your `Applications` folder.
+4. Open `MenuStat.app`.
+
+The app appears as **`MS`** in your menu bar. Click it for the panel; click outside or hit the menu-bar item again to dismiss.
+
+To quit: right-click the menu-bar item → *Quit*.
+
+MenuStat is Developer ID signed and notarized. If macOS asks for confirmation the first time you open it, choose **Open**.
+
+---
+
+## Build from source
+
+Developer requirements:
+
+| | |
+|---|---|
+| Swift | 5.9+ |
+| Xcode CLT | Latest |
+| Homebrew | For installing lint / format tools |
 
 ```bash
 git clone <repo-url> menustat
@@ -44,9 +65,7 @@ make install-hooks     # one-time: link the pre-commit hook
 make run               # build, bundle, sign, launch the menu-bar app
 ```
 
-The app appears as **`MS`** in your menu bar. Click it for the panel; click outside or hit the menu-bar item again to dismiss.
-
-To quit: right-click the menu-bar item → *Quit*, or `pkill -x MenuStat`.
+For source builds, you can also quit from the terminal with `pkill -x MenuStat`.
 
 ---
 
