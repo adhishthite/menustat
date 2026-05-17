@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+# Git pre-commit hook for MenuStat.
+# Install via: make install-hooks
+set -euo pipefail
+
+ROOT="$(git rev-parse --show-toplevel)"
+cd "$ROOT"
+
+# Only run when Swift files are staged.
+STAGED_SWIFT=$(git diff --cached --name-only --diff-filter=ACMR | grep -E '\.swift$' || true)
+if [ -z "$STAGED_SWIFT" ]; then
+    exit 0
+fi
+
+echo "▶ pre-commit: formatting + linting staged Swift files"
+
+if ! command -v swiftformat >/dev/null 2>&1 || ! command -v swiftlint >/dev/null 2>&1; then
+    echo "✗ swiftformat / swiftlint missing. Run: make install-tools" >&2
+    exit 1
+fi
+
+# Format and re-stage anything that changed.
+swiftformat $STAGED_SWIFT --quiet
+for file in $STAGED_SWIFT; do
+    if [ -f "$file" ]; then
+        git add "$file"
+    fi
+done
+
+# Lint (strict — any warning fails the commit).
+swiftlint lint --quiet --strict -- $STAGED_SWIFT
+
+echo "✓ pre-commit passed"

@@ -1,0 +1,69 @@
+# SwiftFormat configuration
+# https://github.com/nicklockwood/SwiftFormat
+
+--swiftversion 5.9
+--exclude .build,.swiftpm,DerivedData,MenuStat.app
+
+# Formatting
+--indent 4
+--maxwidth 140
+--linebreaks lf
+--commas inline
+--semicolons never
+--trimwhitespace always
+--ranges no-space
+--operatorfunc spaced
+--nospaceoperators ...,..<
+
+# Wrapping
+--wraparguments before-first
+--wrapparameters before-first
+--wrapcollections before-first
+--wrapconditions preserve
+--closingparen balanced
+--funcattributes prev-line
+--typeattributes prev-line
+--storedvarattrs same-line
+
+# Self
+--self remove
+--selfrequired
+
+# Imports & headers
+--importgrouping testable-bottom
+--header strip
+
+# Misc
+--stripunusedargs closure-only
+--decimalgrouping 3,6
+--binarygrouping 4,8
+--hexgrouping 4,8
+--octalgrouping 4,8
+--fragment false
+--ifdef no-indent
+--xcodeindentation disabled
+--patternlet hoist
+--shortoptionals always
+--redundanttype inferred
+--emptybraces no-space
+--someAny enabled
+
+# Rules
+--enable isEmpty
+--enable redundantSelf
+--enable redundantReturn
+--enable redundantType
+--enable redundantParens
+--enable redundantGet
+--enable redundantInit
+--enable redundantVoidReturnType
+--enable trailingCommas
+--enable sortImports
+--enable duplicateImports
+--enable strongOutlets
+--enable strongifiedSelf
+--enable yodaConditions
+--enable preferKeyPath
+--enable wrapMultilineStatementBraces
+
+--disable wrapEnumCases

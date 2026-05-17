@@ -1,0 +1,20 @@
+.build/
+.swiftpm/
+DerivedData/
+MenuStat.app/
+
+# Tool caches
+.swiftlint-cache/
+*.xcresult
+
+# Editor
+.vscode/
+.idea/
+*.swp
+
+# Local agent / tool state
+.claude/
+.codex/
+
+# macOS
+.DS_Store
