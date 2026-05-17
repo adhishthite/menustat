@@ -33,7 +33,7 @@ A lightweight macOS menu-bar system monitor for Apple Silicon — CPU, unified m
 ## Install
 
 1. Download the latest release:
-   [MenuStat-0.1.2.dmg](https://github.com/adhishthite/menustat/releases/download/v0.1.2/MenuStat-0.1.2.dmg)
+   [MenuStat-0.1.3.dmg](https://github.com/adhishthite/menustat/releases/download/v0.1.3/MenuStat-0.1.3.dmg)
 2. Open the DMG.
 3. Drag `MenuStat.app` into `Applications`.
 4. Open `MenuStat.app`.
