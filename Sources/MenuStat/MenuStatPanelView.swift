@@ -150,6 +150,10 @@ private struct HeaderRow: View {
                         .microLabel(Brand.micro)
                     Text("REFRESH 5s")
                         .microLabel(Brand.mute)
+                    Text("·")
+                        .microLabel(Brand.micro)
+                    Text("UP \(snapshot.uptime.uptimeShortString.uppercased())")
+                        .microLabel(Brand.mute)
                 }
             }
 
@@ -467,6 +471,7 @@ private struct CPUDetail: View {
             DatumGrid(items: [
                 DatumItem(label: "BUSIEST", value: snapshot.cpu.busiestCore.percentString),
                 DatumItem(label: "LOGICAL", value: "\(snapshot.coreCount)"),
+                DatumItem(label: "UPTIME", value: snapshot.uptime.uptimeDetailString),
                 DatumItem(label: "NICE", value: snapshot.cpu.nice.percentString)
             ])
 

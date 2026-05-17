@@ -67,4 +67,16 @@ final class FormattingTests: XCTestCase {
         let oneGB: UInt64 = 1_073_741_824
         XCTAssertTrue(oneGB.formattedBytes.contains("GB"))
     }
+
+    func testUptimeShortString() {
+        XCTAssertEqual(TimeInterval(59).uptimeShortString, "1m")
+        XCTAssertEqual(TimeInterval(3899).uptimeShortString, "1h 04m")
+        XCTAssertEqual(TimeInterval(183_600).uptimeShortString, "2d 03h")
+    }
+
+    func testUptimeDetailString() {
+        XCTAssertEqual(TimeInterval(60).uptimeDetailString, "1m")
+        XCTAssertEqual(TimeInterval(7500).uptimeDetailString, "2h 05m")
+        XCTAssertEqual(TimeInterval(183_900).uptimeDetailString, "2d 3h 05m")
+    }
 }

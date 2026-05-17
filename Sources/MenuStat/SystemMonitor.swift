@@ -36,6 +36,7 @@ struct SystemSnapshot {
     let pressure: MemoryPressure
     let fans: FanSnapshot
     let apps: AppUsageSnapshot
+    let uptime: TimeInterval
     let updatedAt: Date
 
     var menuTitle: String {
@@ -49,6 +50,7 @@ struct SystemSnapshot {
         pressure: .normal,
         fans: .unavailable("Checking fan sensors"),
         apps: .empty,
+        uptime: ProcessInfo.processInfo.systemUptime,
         updatedAt: Date()
     )
 
@@ -59,6 +61,7 @@ struct SystemSnapshot {
         pressure: .normal,
         fans: .unavailable("MenuStat is designed for Apple Silicon Macs only."),
         apps: .empty,
+        uptime: ProcessInfo.processInfo.systemUptime,
         updatedAt: Date()
     )
 }
@@ -305,6 +308,7 @@ final class SystemSampler {
             pressure: pressure(for: memory),
             fans: fanReader.readFans(),
             apps: sampleAppUsage(totalMemory: memory.total),
+            uptime: ProcessInfo.processInfo.systemUptime,
             updatedAt: Date()
         )
     }
@@ -505,6 +509,38 @@ final class SystemSampler {
 extension Double {
     var percentString: String {
         formatted(.percent.precision(.fractionLength(0)))
+    }
+}
+
+extension TimeInterval {
+    var uptimeShortString: String {
+        let seconds = max(0, Int(rounded(.down)))
+        let days = seconds / 86400
+        let hours = (seconds % 86400) / 3600
+        let minutes = (seconds % 3600) / 60
+
+        if days > 0 {
+            return "\(days)d \(String(format: "%02dh", hours))"
+        }
+        if hours > 0 {
+            return "\(hours)h \(String(format: "%02dm", minutes))"
+        }
+        return "\(max(1, minutes))m"
+    }
+
+    var uptimeDetailString: String {
+        let seconds = max(0, Int(rounded(.down)))
+        let days = seconds / 86400
+        let hours = (seconds % 86400) / 3600
+        let minutes = (seconds % 3600) / 60
+
+        if days > 0 {
+            return "\(days)d \(hours)h \(String(format: "%02dm", minutes))"
+        }
+        if hours > 0 {
+            return "\(hours)h \(String(format: "%02dm", minutes))"
+        }
+        return "\(max(1, minutes))m"
     }
 }
 
