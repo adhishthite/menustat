@@ -16,10 +16,10 @@ final class SystemMonitor: ObservableObject {
         #endif
 
         snapshot = sampler.sample()
-        timer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
-            Task { @MainActor in
+        timer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { _ in
+            Task { @MainActor [weak self] in
                 guard let self else { return }
-                self.snapshot = self.sampler.sample()
+                snapshot = sampler.sample()
             }
         }
     }
