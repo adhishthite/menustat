@@ -2,6 +2,7 @@
 .swiftpm/
 DerivedData/
 MenuStat.app/
+dist/
 
 # Tool caches
 .swiftlint-cache/

@@ -4,6 +4,7 @@
 APP_NAME       := MenuStat
 SWIFT          := swift
 SCRIPT         := ./script/build_and_run.sh
+PACKAGE_SCRIPT := ./script/package_release.sh
 RELEASE_BIN    := .build/release/$(APP_NAME)
 DEBUG_BIN      := .build/debug/$(APP_NAME)
 SWIFTLINT      := $(shell command -v swiftlint 2>/dev/null)
@@ -36,6 +37,10 @@ build: ## Debug build
 .PHONY: release
 release: ## Optimized release build
 	$(SWIFT) build -c release
+
+.PHONY: package-release
+package-release: ## Build, Developer ID sign, and zip a distributable .app
+	$(PACKAGE_SCRIPT)
 
 .PHONY: strict
 strict: ## Release build with -warnings-as-errors (Swift's "type checker" gate)

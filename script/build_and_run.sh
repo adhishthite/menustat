@@ -3,7 +3,7 @@ set -euo pipefail
 
 MODE="${1:-run}"
 APP_NAME="MenuStat"
-BUNDLE_ID="com.local.MenuStat"
+BUNDLE_ID="com.adhishthite.MenuStat"
 MIN_SYSTEM_VERSION="13.0"
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -39,6 +39,8 @@ cat >"$INFO_PLIST" <<PLIST
   <string>0.1</string>
   <key>CFBundleVersion</key>
   <string>1</string>
+  <key>LSApplicationCategoryType</key>
+  <string>public.app-category.utilities</string>
   <key>LSArchitecturePriority</key>
   <array>
     <string>arm64</string>
@@ -56,8 +58,6 @@ PLIST
 /usr/bin/codesign --force --deep --sign - "$APP_BUNDLE"
 
 open_app() {
-  : > /tmp/menustat-status.log
-  : > /tmp/menustat-click.log
   /usr/bin/open -n "$APP_BUNDLE"
 }
 
@@ -80,7 +80,6 @@ case "$MODE" in
     open_app
     sleep 2
     pgrep -x "$APP_NAME" >/dev/null
-    test -s /tmp/menustat-status.log
     ;;
   *)
     echo "usage: $0 [run|--debug|--logs|--telemetry|--verify]" >&2

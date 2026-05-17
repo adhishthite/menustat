@@ -41,6 +41,7 @@ final class MenuStatAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
     private var localEventMonitor: Any?
     private var globalEventMonitor: Any?
     private var preferencesCancellable: AnyCancellable?
+    private var isPanelVisible = false
     private let panelSize = NSSize(width: 442, height: 620)
     private let panelGap: CGFloat = -8
 
@@ -63,7 +64,6 @@ final class MenuStatAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
 
         statusItem = item
         statusMenu = menu
-        appendStatusLog("status item created; button=\(String(describing: item.button))")
 
         let timer = Timer(timeInterval: 5, repeats: true) { [weak self] _ in
             self?.refreshSnapshot()
@@ -81,28 +81,24 @@ final class MenuStatAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
             }
         }
         refreshSnapshot()
-        appendStatusLog("initial snapshot complete; menuItems=\(menu.items.count)")
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        refreshTimer?.invalidate()
+        refreshTimer = nil
         removePanelEventMonitors()
     }
 
     func menuWillOpen(_ menu: NSMenu) {
-        appendClickLog("status menu will open")
         rebuildStatusMenu()
     }
 
     func menuNeedsUpdate(_ menu: NSMenu) {
-        appendClickLog("status menu needs update")
         rebuildStatusMenu()
     }
 
     @objc
     func statusItemClicked(_ sender: Any?) {
-        let eventType = NSApp.currentEvent.map { "\($0.type.rawValue)" } ?? "none"
-        appendClickLog("status item action fired; eventType=\(eventType)")
-
         if NSApp.currentEvent?.type == .rightMouseUp {
             showStatusMenu()
             return
@@ -118,7 +114,6 @@ final class MenuStatAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
 
     @objc
     func openDetails(_ sender: Any?) {
-        appendClickLog("open details selected")
         showPanel()
     }
 
@@ -129,16 +124,17 @@ final class MenuStatAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
 
     private func showPanel() {
         guard let panel else { return }
+        isPanelVisible = true
         refreshPanel()
         let frame = panelFrame()
-        appendClickLog("show panel frame=\(frame)")
         panel.setFrame(frame, display: true)
         panel.makeKeyAndOrderFront(nil)
         panel.orderFrontRegardless()
-        appendClickLog("panel visible=\(panel.isVisible); key=\(panel.isKeyWindow)")
     }
 
     private func hidePanel() {
+        isPanelVisible = false
+        refreshPanel()
         panel?.orderOut(nil)
     }
 
@@ -184,7 +180,8 @@ final class MenuStatAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
             rootView: MenuStatPanelRoot(
                 snapshot: snapshot,
                 preferences: displayPreferences,
-                height: panelSize.height
+                height: panelSize.height,
+                isVisible: isPanelVisible
             )
         )
         hosting.view.frame = NSRect(origin: .zero, size: panelSize)
@@ -212,7 +209,8 @@ final class MenuStatAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
         hostingController?.rootView = MenuStatPanelRoot(
             snapshot: snapshot,
             preferences: displayPreferences,
-            height: panelSize.height
+            height: panelSize.height,
+            isVisible: isPanelVisible
         )
     }
 
@@ -316,26 +314,6 @@ final class MenuStatAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
         quitItem.isEnabled = true
         menu.addItem(quitItem)
     }
-
-    private func appendStatusLog(_ message: String) {
-        append(message, to: "/tmp/menustat-status.log")
-    }
-
-    private func appendClickLog(_ message: String) {
-        append(message, to: "/tmp/menustat-click.log")
-    }
-
-    private func append(_ message: String, to path: String) {
-        let line = "\(message) at \(Date())\n"
-        guard let data = line.data(using: .utf8) else { return }
-        if !FileManager.default.fileExists(atPath: path) {
-            FileManager.default.createFile(atPath: path, contents: nil)
-        }
-        guard let file = FileHandle(forWritingAtPath: path) else { return }
-        file.seekToEndOfFile()
-        file.write(data)
-        try? file.close()
-    }
 }
 
 private final class MenuStatStatusPanel: NSPanel {
@@ -352,10 +330,11 @@ private struct MenuStatPanelRoot: View {
     let snapshot: SystemSnapshot
     @ObservedObject var preferences: DisplayPreferences
     let height: CGFloat
+    let isVisible: Bool
 
     var body: some View {
         ZStack(alignment: .top) {
-            MenuStatPanelView(snapshot: snapshot, preferences: preferences)
+            MenuStatPanelView(snapshot: snapshot, preferences: preferences, isVisible: isVisible)
         }
         .frame(width: 430, height: height - 12, alignment: .top)
         .padding(6)

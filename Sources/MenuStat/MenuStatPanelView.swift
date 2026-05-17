@@ -71,11 +71,12 @@ private extension View {
 struct MenuStatPanelView: View {
     let snapshot: SystemSnapshot
     @ObservedObject var preferences: DisplayPreferences
+    let isVisible: Bool
     @State private var activeSection: MetricKind = .cpu
 
     var body: some View {
         VStack(spacing: 0) {
-            HeaderRow(snapshot: snapshot)
+            HeaderRow(snapshot: snapshot, isVisible: isVisible)
             Hairline()
             DisplayControls(preferences: preferences)
             Hairline()
@@ -114,62 +115,61 @@ struct MenuStatPanelView: View {
 
 private struct HeaderRow: View {
     let snapshot: SystemSnapshot
-    @State private var now: Date = .init()
-
-    private let clock = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
-
-    private var clockText: String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "HH:mm:ss"
-        return formatter.string(from: now)
-    }
+    let isVisible: Bool
 
     var body: some View {
-        HStack(alignment: .center, spacing: 10) {
-            LiveryBar(tint: Brand.cpu)
+        TimelineView(.periodic(from: .now, by: 1)) { context in
+            HStack(alignment: .center, spacing: 10) {
+                LiveryBar(tint: Brand.cpu)
 
-            VStack(alignment: .leading, spacing: 5) {
-                HStack(spacing: 6) {
-                    Text("MENUSTAT")
-                        .font(.system(size: 13, weight: .black, design: .monospaced))
-                        .tracking(2.4)
-                        .foregroundStyle(Brand.text)
-                    Text("//")
-                        .microLabel(Brand.micro)
-                    Text("APPLE M-SERIES")
-                        .microLabel()
+                VStack(alignment: .leading, spacing: 5) {
+                    HStack(spacing: 6) {
+                        Text("MENUSTAT")
+                            .font(.system(size: 13, weight: .black, design: .monospaced))
+                            .tracking(2.4)
+                            .foregroundStyle(Brand.text)
+                        Text("//")
+                            .microLabel(Brand.micro)
+                        Text("APPLE M-SERIES")
+                            .microLabel()
+                    }
+                    HStack(spacing: 8) {
+                        StatusDot(color: Brand.mem, isActive: isVisible)
+                        Text("LIVE")
+                            .microLabel(Brand.mute)
+                        Text("·")
+                            .microLabel(Brand.micro)
+                        Text("REFRESH 5s")
+                            .microLabel(Brand.mute)
+                        Text("·")
+                            .microLabel(Brand.micro)
+                        Text("UP \(snapshot.uptime.uptimeShortString.uppercased())")
+                            .microLabel(Brand.mute)
+                    }
                 }
-                HStack(spacing: 8) {
-                    StatusDot(color: Brand.mem)
-                    Text("LIVE")
-                        .microLabel(Brand.mute)
-                    Text("·")
-                        .microLabel(Brand.micro)
-                    Text("REFRESH 5s")
-                        .microLabel(Brand.mute)
-                    Text("·")
-                        .microLabel(Brand.micro)
-                    Text("UP \(snapshot.uptime.uptimeShortString.uppercased())")
+
+                Spacer()
+
+                VStack(alignment: .trailing, spacing: 5) {
+                    Text(Self.clockFormatter.string(from: context.date))
+                        .numeric(15, weight: .bold)
+                    Text("T-\(timeAgo(from: snapshot.updatedAt, now: context.date))")
                         .microLabel(Brand.mute)
                 }
             }
-
-            Spacer()
-
-            VStack(alignment: .trailing, spacing: 5) {
-                Text(clockText)
-                    .numeric(15, weight: .bold)
-                    .onReceive(clock) { now = $0 }
-                Text("T-\(timeAgo(from: snapshot.updatedAt))")
-                    .microLabel(Brand.mute)
-            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 15)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 15)
     }
 
-    private func timeAgo(from date: Date) -> String {
-        let seconds = Int(Date().timeIntervalSince(date))
+    private static let clockFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm:ss"
+        return formatter
+    }()
+
+    private func timeAgo(from date: Date, now: Date) -> String {
+        let seconds = Int(now.timeIntervalSince(date))
         return seconds < 0 ? "00s" : String(format: "%02ds", seconds)
     }
 }
@@ -186,6 +186,7 @@ private struct LiveryBar: View {
 
 private struct StatusDot: View {
     let color: Color
+    let isActive: Bool
     @State private var pulsing = false
 
     var body: some View {
@@ -194,8 +195,11 @@ private struct StatusDot: View {
             .frame(width: 6, height: 6)
             .opacity(pulsing ? 1.0 : 0.35)
             .shadow(color: color.opacity(0.6), radius: pulsing ? 3 : 0)
-            .animation(.easeInOut(duration: 1.1).repeatForever(autoreverses: true), value: pulsing)
-            .onAppear { pulsing = true }
+            .animation(isActive ? .easeInOut(duration: 1.1).repeatForever(autoreverses: true) : .default, value: pulsing)
+            .onAppear { pulsing = isActive }
+            .onChange(of: isActive) { isActive in
+                pulsing = isActive
+            }
     }
 }
 

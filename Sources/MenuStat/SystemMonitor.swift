@@ -1,33 +1,7 @@
 import Darwin
 import Foundation
+import IOKit
 import MachO
-
-@MainActor
-final class SystemMonitor: ObservableObject {
-    @Published private(set) var snapshot = SystemSnapshot.empty
-
-    private let sampler = SystemSampler()
-    private var timer: Timer?
-
-    init() {
-        #if !arch(arm64)
-        snapshot = SystemSnapshot.unsupported
-        return
-        #endif
-
-        snapshot = sampler.sample()
-        timer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { _ in
-            Task { @MainActor [weak self] in
-                guard let self else { return }
-                snapshot = sampler.sample()
-            }
-        }
-    }
-
-    deinit {
-        timer?.invalidate()
-    }
-}
 
 struct SystemSnapshot {
     let cpu: CPUSnapshot
@@ -351,6 +325,8 @@ struct AppUsage: Identifiable {
 final class SystemSampler {
     private var previousCPULoad: host_cpu_load_info?
     private var previousCoreLoads: [host_cpu_load_info] = []
+    private var previousProcessUsage: [Int32: ProcessUsageSample] = [:]
+    private var previousProcessSampleDate: Date?
     private let fanReader = SMCFanReader()
     private let gpuReader = GPUReader()
 
@@ -496,41 +472,32 @@ final class SystemSampler {
     }
 
     private func sampleAppUsage(totalMemory: UInt64) -> AppUsageSnapshot {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/bin/ps")
-        process.arguments = ["-axo", "pid=,pcpu=,rss=,comm="]
-
-        let pipe = Pipe()
-        process.standardOutput = pipe
-        process.standardError = Pipe()
-
-        do {
-            try process.run()
-        } catch {
-            return .empty
-        }
-
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        process.waitUntilExit()
-        guard let output = String(data: data, encoding: .utf8) else { return .empty }
+        let now = Date()
+        let previousDate = previousProcessSampleDate
+        let previousUsage = previousProcessUsage
+        var currentUsage: [Int32: ProcessUsageSample] = [:]
 
         var grouped: [String: (cpu: Double, memory: UInt64)] = [:]
-        for line in output.split(separator: "\n") {
-            let parts = line.split(separator: " ", maxSplits: 3, omittingEmptySubsequences: true)
-            guard parts.count == 4,
-                  Double(parts[1]) != nil,
-                  let cpu = Double(parts[1]),
-                  let rssKilobytes = UInt64(parts[2])
-            else { continue }
 
-            let rawCommand = String(parts[3])
-            let name = appName(from: rawCommand)
+        for pid in allProcessIdentifiers() {
+            guard let sample = processUsage(for: pid) else { continue }
+            currentUsage[pid] = sample
+
+            let name = appName(for: pid)
             guard !name.isEmpty else { continue }
 
-            let memoryBytes = rssKilobytes * 1024
+            let cpu = cpuPercent(
+                for: sample,
+                previous: previousUsage[pid],
+                previousDate: previousDate,
+                now: now
+            )
             let current = grouped[name] ?? (cpu: 0, memory: 0)
-            grouped[name] = (cpu: current.cpu + cpu, memory: current.memory + memoryBytes)
+            grouped[name] = (cpu: current.cpu + cpu, memory: current.memory + sample.memoryBytes)
         }
+
+        previousProcessUsage = currentUsage
+        previousProcessSampleDate = now
 
         let apps = grouped.map { name, usage in
             let memoryContribution = totalMemory > 0 ? (Double(usage.memory) / Double(totalMemory)) * 100 : 0
@@ -550,6 +517,72 @@ final class SystemSampler {
         )
     }
 
+    private func allProcessIdentifiers() -> [Int32] {
+        let processCount = proc_listallpids(nil, 0)
+        guard processCount > 0 else { return [] }
+
+        var pids = Array(repeating: pid_t(0), count: Int(processCount))
+        let bytesWritten = pids.withUnsafeMutableBytes {
+            proc_listallpids($0.baseAddress, Int32($0.count))
+        }
+        guard bytesWritten > 0 else { return [] }
+
+        let returnedCount = Int(bytesWritten)
+        let pidCount = returnedCount <= pids.count ? returnedCount : returnedCount / MemoryLayout<pid_t>.stride
+        return pids
+            .prefix(pidCount)
+            .filter { $0 > 0 }
+    }
+
+    private func processUsage(for pid: Int32) -> ProcessUsageSample? {
+        var taskInfo = proc_taskinfo()
+        let size = MemoryLayout<proc_taskinfo>.stride
+        let result = withUnsafeMutablePointer(to: &taskInfo) {
+            $0.withMemoryRebound(to: UInt8.self, capacity: size) {
+                proc_pidinfo(pid, PROC_PIDTASKINFO, 0, $0, Int32(size))
+            }
+        }
+        guard result == Int32(size) else { return nil }
+
+        return ProcessUsageSample(
+            totalCPUTime: taskInfo.pti_total_user + taskInfo.pti_total_system,
+            memoryBytes: taskInfo.pti_resident_size
+        )
+    }
+
+    private func cpuPercent(
+        for sample: ProcessUsageSample,
+        previous: ProcessUsageSample?,
+        previousDate: Date?,
+        now: Date
+    ) -> Double {
+        guard let previous,
+              let previousDate,
+              sample.totalCPUTime >= previous.totalCPUTime
+        else { return 0 }
+
+        let elapsed = now.timeIntervalSince(previousDate)
+        guard elapsed > 0 else { return 0 }
+
+        let cpuSeconds = Double(sample.totalCPUTime - previous.totalCPUTime) / 1_000_000_000
+        return max(0, cpuSeconds / elapsed * 100)
+    }
+
+    private func appName(for pid: Int32) -> String {
+        var pathBuffer = Array(repeating: CChar(0), count: Int(MAXPATHLEN))
+        let pathLength = proc_pidpath(pid, &pathBuffer, UInt32(pathBuffer.count))
+        if pathLength > 0 {
+            let path = String(cString: pathBuffer)
+            return appName(from: path)
+        }
+
+        var nameBuffer = Array(repeating: CChar(0), count: 2 * Int(MAXCOMLEN))
+        let nameLength = proc_name(pid, &nameBuffer, UInt32(nameBuffer.count))
+        guard nameLength > 0 else { return "" }
+        return String(cString: nameBuffer)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     private func appName(from command: String) -> String {
         let pathName = URL(fileURLWithPath: command).lastPathComponent
         let name = pathName.isEmpty ? command : pathName
@@ -562,30 +595,37 @@ final class SystemSampler {
     }
 }
 
+private struct ProcessUsageSample {
+    let totalCPUTime: UInt64
+    let memoryBytes: UInt64
+}
+
 final class GPUReader {
     func readGPU() -> GPUSnapshot {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/sbin/ioreg")
-        process.arguments = ["-r", "-c", "AGXAccelerator", "-d", "1"]
-
-        let pipe = Pipe()
-        process.standardOutput = pipe
-        process.standardError = Pipe()
-
-        do {
-            try process.run()
-        } catch {
+        var iterator: io_iterator_t = 0
+        let result = IOServiceGetMatchingServices(
+            kIOMainPortDefault,
+            IOServiceMatching("AGXAccelerator"),
+            &iterator
+        )
+        guard result == KERN_SUCCESS else {
             return .unavailable("GPU counters are not available.", source: "AGXAccelerator")
         }
+        defer { IOObjectRelease(iterator) }
 
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        process.waitUntilExit()
+        var properties: [String: Any] = [:]
+        while true {
+            let service = IOIteratorNext(iterator)
+            guard service != 0 else { break }
+            mergeProperties(from: service, into: &properties)
+            IOObjectRelease(service)
+        }
 
-        guard let output = String(data: data, encoding: .utf8), !output.isEmpty else {
+        guard !properties.isEmpty else {
             return .unavailable("No AGX accelerator entry was found.", source: "AGXAccelerator")
         }
 
-        return parseIORegOutput(output)
+        return parseProperties(properties)
     }
 
     func parseIORegOutput(_ output: String) -> GPUSnapshot {
@@ -614,6 +654,87 @@ final class GPUReader {
             message: nil,
             source: "AGXAccelerator"
         )
+    }
+
+    private func mergeProperties(from service: io_object_t, into properties: inout [String: Any]) {
+        var unmanagedProperties: Unmanaged<CFMutableDictionary>?
+        let result = IORegistryEntryCreateCFProperties(
+            service,
+            &unmanagedProperties,
+            kCFAllocatorDefault,
+            0
+        )
+        guard result == KERN_SUCCESS,
+              let serviceProperties = unmanagedProperties?.takeRetainedValue() as? [String: Any]
+        else { return }
+
+        properties.merge(serviceProperties) { current, _ in current }
+    }
+
+    private func parseProperties(_ properties: [String: Any]) -> GPUSnapshot {
+        let utilization = percentValue(named: "Device Utilization %", in: properties)
+        let renderer = percentValue(named: "Renderer Utilization %", in: properties)
+        let tiler = percentValue(named: "Tiler Utilization %", in: properties)
+        let memoryBytes = integerValue(named: "In use system memory", in: properties).map(UInt64.init)
+        let coreCount = integerValue(named: "gpu-core-count", in: properties)
+        let model = stringValue(named: "model", in: properties)
+
+        guard utilization != nil || renderer != nil || tiler != nil else {
+            return .unavailable("AGX counters were found, but utilization is not exposed.", source: "AGXAccelerator")
+        }
+
+        return GPUSnapshot(
+            utilization: utilization,
+            rendererUtilization: renderer,
+            tilerUtilization: tiler,
+            memoryBytes: memoryBytes,
+            coreCount: coreCount,
+            model: model,
+            message: nil,
+            source: "AGXAccelerator"
+        )
+    }
+
+    private func percentValue(named name: String, in properties: [String: Any]) -> Double? {
+        integerValue(named: name, in: properties).map { max(0, min(1, Double($0) / 100)) }
+    }
+
+    private func integerValue(named name: String, in properties: [String: Any]) -> Int? {
+        switch value(named: name, in: properties) {
+        case let number as NSNumber:
+            number.intValue
+        case let string as String:
+            Int(string)
+        default:
+            nil
+        }
+    }
+
+    private func stringValue(named name: String, in properties: [String: Any]) -> String? {
+        switch value(named: name, in: properties) {
+        case let string as String:
+            string
+        case let data as Data:
+            String(data: data, encoding: .utf8)?.trimmingCharacters(in: .controlCharacters)
+        default:
+            nil
+        }
+    }
+
+    private func value(named name: String, in properties: [String: Any]) -> Any? {
+        if let value = properties[name] {
+            return value
+        }
+
+        for nested in properties.values {
+            if let dictionary = nested as? [String: Any],
+               let value = dictionary[name]
+            {
+                return value
+            }
+        }
+
+        return nil
     }
 
     private func percentValue(named name: String, in output: String) -> Double? {

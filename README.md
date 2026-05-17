@@ -57,6 +57,7 @@ To quit: right-click the menu-bar item → *Quit*, or `pkill -x MenuStat`.
 | Target | What it does |
 |---|---|
 | `make run` | Build (release), bundle into `MenuStat.app`, codesign locally, launch. |
+| `make package-release` | Build, Developer ID sign, optionally notarize, and zip a distributable `.app`. |
 | `make build` / `make release` | Debug / release build only — no bundle, no launch. |
 | `make strict` | Release build with `-warnings-as-errors`. The "type-check + compile" gate. |
 | `make test` | Run XCTest unit tests (parallel). |
@@ -80,13 +81,14 @@ To quit: right-click the menu-bar item → *Quit*, or `pkill -x MenuStat`.
 ├── Sources/MenuStat/
 │   ├── MenuStatApp.swift            # NSApp delegate, status item, panel wiring
 │   ├── MenuStatPanelView.swift      # SwiftUI panel: header, metric tiles, detail layer
-│   ├── SystemMonitor.swift          # Pure value types + SystemSampler (Mach syscalls)
+│   ├── SystemMonitor.swift          # Pure value types + SystemSampler (Mach/libproc/IOKit)
 │   └── SMCFanReader.swift           # AppleSMC IOKit client
 ├── Tests/MenuStatTests/
 │   ├── FanSnapshotTests.swift       # Pure-logic tests for fan status / bucketing
 │   └── MemorySnapshotTests.swift    # Memory / CPU / formatter tests
 ├── script/
 │   ├── build_and_run.sh             # Build → bundle → codesign → launch pipeline
+│   ├── package_release.sh           # Developer ID signing + notarization packaging
 │   └── pre-commit                   # Git hook: format + lint staged Swift files
 ├── .swiftlint.yml                   # Lint config (strict mode in CI)
 ├── .swiftformat                     # Format config (4-space, 140-col, sorted imports)
@@ -111,7 +113,9 @@ MenuStat is a single executable target. The runtime topology:
 │                              │                                 │
 │                              ├── host_statistics  (CPU)        │
 │                              ├── host_statistics64  (VM)       │
-│                              ├── /bin/ps -axo …  (per-app)    │
+│                              ├── libproc  (per-app usage)     │
+│                              ├── GPUReader.readGPU()          │
+│                              │   └── IORegistry AGX counters  │
 │                              └── SMCFanReader.readFans()      │
 │                                  └── IOServiceOpen +           │
 │                                      IOConnectCallStructMethod │
@@ -122,7 +126,6 @@ MenuStat is a single executable target. The runtime topology:
 **Design notes:**
 
 - The UI never touches IOKit directly — it consumes immutable `SystemSnapshot` value types produced by `SystemSampler`. This is why the unit tests can cover the entire `FanSnapshot` / `MemorySnapshot` / `CPUSnapshot` surface without mocking syscalls.
-- `SystemMonitor` (the `ObservableObject` shell) is currently unused by the menu-bar delegate, which drives its own `Timer`. It's retained for future SwiftUI scene work.
 - Fans, CPU, and memory are sampled on the same 5 s cadence to keep snapshots internally consistent.
 
 ---
@@ -136,6 +139,55 @@ make check      # format-check + lint + strict build + tests
 ```
 
 The pre-commit hook (`make install-hooks`) runs format + lint on staged `.swift` files only — fast enough you won't be tempted to `--no-verify`.
+
+---
+
+## Release packaging
+
+MenuStat ships outside the Mac App Store as a Developer ID signed and notarized app. The release script defaults to:
+
+| Setting | Value |
+|---|---|
+| Bundle ID | `com.adhishthite.MenuStat` |
+| Team ID | `ATQ45ZSG3M` |
+| Signing identity | `Developer ID Application: Adhish Thite (ATQ45ZSG3M)` |
+| Minimum macOS | `13.0` |
+| Architecture | `arm64` |
+
+Build a signed local release:
+
+```bash
+make package-release
+```
+
+That creates:
+
+```text
+dist/work/MenuStat.app
+dist/MenuStat-0.1.0.zip
+```
+
+The unsigned/notarization-sensitive values can be overridden:
+
+```bash
+MARKETING_VERSION=1.0.0 BUILD_NUMBER=100 make package-release
+```
+
+To notarize, first store an Apple notary credential in Keychain. Use an app-specific password for the Apple ID that belongs to the Developer Team:
+
+```bash
+xcrun notarytool store-credentials MenuStatNotary \
+  --apple-id "YOUR_APPLE_ID_EMAIL" \
+  --team-id ATQ45ZSG3M
+```
+
+Then run:
+
+```bash
+NOTARY_PROFILE=MenuStatNotary make package-release
+```
+
+The script submits the app zip to Apple's notary service, staples the notarization ticket to `MenuStat.app`, verifies Gatekeeper assessment, then writes the final distributable zip.
 
 ### Adding a new metric
 
@@ -188,7 +240,7 @@ SwiftPM artifacts are cached on `Package.resolved` + `Package.swift` hashes. Con
 
 - [ ] Inject `FanReader` and `Sampler` protocols so end-to-end sampling can be unit-tested with fakes.
 - [ ] Persist user preferences (refresh interval, which sections to show, menu-bar title format).
-- [ ] Optional notarized & signed distribution via a Developer ID certificate.
+- [x] Optional notarized & signed distribution via a Developer ID certificate.
 - [ ] Battery / thermal-state section.
 - [ ] Launch-at-login via `SMAppService`.
 - [ ] GPU activity (when a public API lands).
