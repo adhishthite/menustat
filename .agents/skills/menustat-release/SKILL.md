@@ -18,6 +18,8 @@ launch-at-login distribution work.
 - Signing identity: `Developer ID Application: Adhish Thite (ATQ45ZSG3M)`
 - Notary profile: `MenuStatNotary`
 - Current release artifact shape: notarized `.dmg` plus `.zip`
+- CI/CD release workflow: `.github/workflows/release.yml`
+- CI/CD setup docs: `docs/releasing.md`
 
 ## Release Checklist
 
@@ -65,6 +67,12 @@ launch-at-login distribution work.
      --title "MenuStat X.Y.Z" \
      --notes-file /path/to/release-notes.md \
      --latest
+   ```
+
+   If GitHub Actions secrets are configured, prefer pushing a tag instead:
+   ```bash
+   git tag vX.Y.Z
+   git push origin vX.Y.Z
    ```
 
 8. Verify uploaded assets:

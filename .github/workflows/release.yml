@@ -1,0 +1,183 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to release, for example 0.1.3"
+        required: true
+        type: string
+      build_number:
+        description: "Build number. Defaults to the GitHub run number."
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Build, Notarize, and Publish
+    runs-on: macos-14
+    timeout-minutes: 45
+
+    env:
+      APP_NAME: MenuStat
+      TEAM_ID: ATQ45ZSG3M
+      NOTARY_PROFILE: MenuStatNotary
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve version
+        id: version
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            version="${{ inputs.version }}"
+            build_number="${{ inputs.build_number }}"
+            if [[ -z "$build_number" ]]; then
+              build_number="${{ github.run_number }}"
+            fi
+          else
+            version="${GITHUB_REF_NAME#v}"
+            build_number="${{ github.run_number }}"
+          fi
+
+          if [[ ! "$version" =~ ^[0-9]+[.][0-9]+[.][0-9]+$ ]]; then
+            echo "Version must look like X.Y.Z, got: $version" >&2
+            exit 1
+          fi
+
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "build_number=$build_number" >> "$GITHUB_OUTPUT"
+
+      - name: Show toolchain
+        run: |
+          sw_vers
+          swift --version
+          xcodebuild -version
+
+      - name: Cache SwiftPM
+        uses: actions/cache@v4
+        with:
+          path: |
+            .build
+            ~/Library/Caches/org.swift.swiftpm
+          key: spm-${{ runner.os }}-${{ hashFiles('Package.resolved', 'Package.swift') }}
+          restore-keys: |
+            spm-${{ runner.os }}-
+
+      - name: Install tooling
+        run: |
+          brew list swiftlint >/dev/null 2>&1 || brew install swiftlint
+          brew list swiftformat >/dev/null 2>&1 || brew install swiftformat
+          swiftlint version
+          swiftformat --version
+
+      - name: Run quality gate
+        run: make check
+
+      - name: Import Developer ID certificate
+        env:
+          DEVELOPER_ID_CERTIFICATE_BASE64: ${{ secrets.DEVELOPER_ID_CERTIFICATE_BASE64 }}
+          DEVELOPER_ID_CERTIFICATE_PASSWORD: ${{ secrets.DEVELOPER_ID_CERTIFICATE_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+        run: |
+          if [[ -z "$DEVELOPER_ID_CERTIFICATE_BASE64" || -z "$DEVELOPER_ID_CERTIFICATE_PASSWORD" || -z "$KEYCHAIN_PASSWORD" ]]; then
+            echo "Missing Developer ID certificate secrets. See docs/releasing.md." >&2
+            exit 1
+          fi
+
+          keychain_path="$RUNNER_TEMP/menustat-signing.keychain-db"
+          cert_path="$RUNNER_TEMP/developer-id.p12"
+
+          echo "$DEVELOPER_ID_CERTIFICATE_BASE64" | base64 --decode > "$cert_path"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$keychain_path"
+          security set-keychain-settings -lut 21600 "$keychain_path"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$keychain_path"
+          security import "$cert_path" \
+            -P "$DEVELOPER_ID_CERTIFICATE_PASSWORD" \
+            -A \
+            -t cert \
+            -f pkcs12 \
+            -k "$keychain_path"
+          security list-keychains -d user -s "$keychain_path" login.keychain-db
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$keychain_path"
+          security find-identity -v -p codesigning "$keychain_path"
+
+      - name: Store notary credentials
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+        run: |
+          if [[ -z "$APPLE_ID" || -z "$APPLE_APP_SPECIFIC_PASSWORD" ]]; then
+            echo "Missing Apple notary secrets. See docs/releasing.md." >&2
+            exit 1
+          fi
+
+          xcrun notarytool store-credentials "$NOTARY_PROFILE" \
+            --apple-id "$APPLE_ID" \
+            --password "$APPLE_APP_SPECIFIC_PASSWORD" \
+            --team-id "$TEAM_ID" \
+            --validate
+
+      - name: Build signed and notarized artifacts
+        env:
+          MARKETING_VERSION: ${{ steps.version.outputs.version }}
+          BUILD_NUMBER: ${{ steps.version.outputs.build_number }}
+          NOTARY_PROFILE: ${{ env.NOTARY_PROFILE }}
+        run: make package-release
+
+      - name: Verify release artifacts
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          spctl --assess --type execute --verbose dist/work/MenuStat.app
+          spctl --assess --type open --context context:primary-signature --verbose "dist/MenuStat-$VERSION.dmg"
+          shasum -a 256 "dist/MenuStat-$VERSION.dmg" "dist/MenuStat-$VERSION.zip" | tee "dist/MenuStat-$VERSION-checksums.txt"
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          tag="v$VERSION"
+          notes="$RUNNER_TEMP/release-notes.md"
+
+          {
+            echo "MenuStat $VERSION"
+            echo
+            echo "Notarized public build for Apple Silicon Macs running macOS 13 or later."
+            echo
+            echo "Recommended install: download MenuStat-$VERSION.dmg, open it, drag MenuStat.app to Applications, then open MenuStat."
+            echo
+            echo "Checksums:"
+            echo '```text'
+            cat "dist/MenuStat-$VERSION-checksums.txt"
+            echo '```'
+          } > "$notes"
+
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" \
+              "dist/MenuStat-$VERSION.dmg" \
+              "dist/MenuStat-$VERSION.zip" \
+              "dist/MenuStat-$VERSION-checksums.txt" \
+              --clobber
+            gh release edit "$tag" --title "MenuStat $VERSION" --notes-file "$notes" --latest
+          else
+            gh release create "$tag" \
+              "dist/MenuStat-$VERSION.dmg" \
+              "dist/MenuStat-$VERSION.zip" \
+              "dist/MenuStat-$VERSION-checksums.txt" \
+              --title "MenuStat $VERSION" \
+              --notes-file "$notes" \
+              --latest
+          fi
