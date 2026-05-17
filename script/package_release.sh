@@ -16,10 +16,13 @@ WORK_DIR="$DIST_DIR/work"
 APP_BUNDLE="$WORK_DIR/$APP_NAME.app"
 APP_CONTENTS="$APP_BUNDLE/Contents"
 APP_MACOS="$APP_CONTENTS/MacOS"
+APP_RESOURCES="$APP_CONTENTS/Resources"
 APP_BINARY="$APP_MACOS/$APP_NAME"
 INFO_PLIST="$APP_CONTENTS/Info.plist"
+APP_ICON="$ROOT_DIR/Resources/AppIcon.icns"
 ZIP_PATH="$DIST_DIR/$APP_NAME-$MARKETING_VERSION.zip"
 NOTARY_ZIP_PATH="$DIST_DIR/$APP_NAME-$MARKETING_VERSION-notary.zip"
+CURRENT_YEAR="$(date +%Y)"
 
 require_signing_identity() {
   if ! /usr/bin/security find-identity -v -p codesigning | /usr/bin/grep -Fq "$SIGNING_IDENTITY"; then
@@ -43,6 +46,8 @@ write_info_plist() {
   <string>$APP_NAME</string>
   <key>CFBundleIdentifier</key>
   <string>$BUNDLE_ID</string>
+  <key>CFBundleIconFile</key>
+  <string>AppIcon</string>
   <key>CFBundleName</key>
   <string>$APP_NAME</string>
   <key>CFBundlePackageType</key>
@@ -64,7 +69,7 @@ write_info_plist() {
   <key>NSHighResolutionCapable</key>
   <true/>
   <key>NSHumanReadableCopyright</key>
-  <string>Copyright 2026 Adhish Thite. All rights reserved.</string>
+  <string>Copyright $CURRENT_YEAR Adhish Thite. All rights reserved.</string>
   <key>NSPrincipalClass</key>
   <string>NSApplication</string>
 </dict>
@@ -81,7 +86,7 @@ package_zip() {
 require_signing_identity
 
 rm -rf "$WORK_DIR"
-mkdir -p "$APP_MACOS"
+mkdir -p "$APP_MACOS" "$APP_RESOURCES"
 mkdir -p "$DIST_DIR"
 rm -f "$ZIP_PATH" "$NOTARY_ZIP_PATH"
 
@@ -90,6 +95,7 @@ swift build -c release
 
 cp "$ROOT_DIR/.build/release/$APP_NAME" "$APP_BINARY"
 chmod +x "$APP_BINARY"
+cp "$APP_ICON" "$APP_RESOURCES/AppIcon.icns"
 write_info_plist
 
 echo "Signing with $SIGNING_IDENTITY"

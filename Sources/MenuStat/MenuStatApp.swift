@@ -118,6 +118,18 @@ final class MenuStatAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
     }
 
     @objc
+    func showAbout(_ sender: Any?) {
+        NSApp.activate(ignoringOtherApps: true)
+
+        let alert = NSAlert()
+        alert.messageText = "MenuStat"
+        alert.informativeText = "\(copyrightText)\n\nApple Silicon system monitor for CPU, memory, pressure, fans, and top-consuming apps."
+        alert.alertStyle = .informational
+        alert.addButton(withTitle: "OK")
+        alert.runModal()
+    }
+
+    @objc
     func quitMenuStat(_ sender: Any?) {
         NSApp.terminate(nil)
     }
@@ -173,6 +185,14 @@ final class MenuStatAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
 
     private func compactTitle(value: String) -> String {
         "▍\(value)"
+    }
+
+    private var copyrightText: String {
+        "Copyright © \(Self.currentYear) Adhish Thite"
+    }
+
+    private static var currentYear: Int {
+        Calendar.current.component(.year, from: Date())
     }
 
     private func setupPanel() {
@@ -296,6 +316,17 @@ final class MenuStatAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
         openItem.target = self
         openItem.isEnabled = true
         menu.addItem(openItem)
+
+        let aboutItem = NSMenuItem(title: "About MenuStat", action: #selector(showAbout(_:)), keyEquivalent: "")
+        aboutItem.target = self
+        aboutItem.isEnabled = true
+        menu.addItem(aboutItem)
+
+        let copyrightItem = NSMenuItem(title: copyrightText, action: nil, keyEquivalent: "")
+        copyrightItem.isEnabled = false
+        menu.addItem(copyrightItem)
+
+        menu.addItem(.separator())
 
         let cpuHeader = NSMenuItem(title: "Top CPU Apps", action: nil, keyEquivalent: "")
         cpuHeader.isEnabled = false

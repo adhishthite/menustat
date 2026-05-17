@@ -10,17 +10,21 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 APP_BUNDLE="$ROOT_DIR/$APP_NAME.app"
 APP_CONTENTS="$APP_BUNDLE/Contents"
 APP_MACOS="$APP_CONTENTS/MacOS"
+APP_RESOURCES="$APP_CONTENTS/Resources"
 APP_BINARY="$APP_MACOS/$APP_NAME"
 INFO_PLIST="$APP_CONTENTS/Info.plist"
+APP_ICON="$ROOT_DIR/Resources/AppIcon.icns"
+CURRENT_YEAR="$(date +%Y)"
 
 pkill -x "$APP_NAME" >/dev/null 2>&1 || true
 
 swift build -c release
 BUILD_BINARY="$ROOT_DIR/.build/release/$APP_NAME"
 
-mkdir -p "$APP_MACOS"
+mkdir -p "$APP_MACOS" "$APP_RESOURCES"
 cp "$BUILD_BINARY" "$APP_BINARY"
 chmod +x "$APP_BINARY"
+cp "$APP_ICON" "$APP_RESOURCES/AppIcon.icns"
 
 cat >"$INFO_PLIST" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -31,6 +35,8 @@ cat >"$INFO_PLIST" <<PLIST
   <string>$APP_NAME</string>
   <key>CFBundleIdentifier</key>
   <string>$BUNDLE_ID</string>
+  <key>CFBundleIconFile</key>
+  <string>AppIcon</string>
   <key>CFBundleName</key>
   <string>$APP_NAME</string>
   <key>CFBundlePackageType</key>
@@ -49,6 +55,8 @@ cat >"$INFO_PLIST" <<PLIST
   <string>$MIN_SYSTEM_VERSION</string>
   <key>LSUIElement</key>
   <true/>
+  <key>NSHumanReadableCopyright</key>
+  <string>Copyright $CURRENT_YEAR Adhish Thite. All rights reserved.</string>
   <key>NSPrincipalClass</key>
   <string>NSApplication</string>
 </dict>
