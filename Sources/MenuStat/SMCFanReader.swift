@@ -3,53 +3,130 @@ import IOKit
 
 final class SMCFanReader {
     private let services = ["AppleSMCKeysEndpoint", "AppleSMC"]
+    private var cachedConnection: (service: String, connection: io_connect_t)?
+    private var cachedUnavailableSnapshot: FanSnapshot?
+
+    deinit {
+        closeCachedConnection()
+    }
 
     func readFans() -> FanSnapshot {
         #if !arch(arm64)
         return .unavailable("MenuStat fan checks are Apple Silicon only.")
         #else
+        if let cachedUnavailableSnapshot {
+            return cachedUnavailableSnapshot
+        }
+
+        if let cachedConnection {
+            switch readFans(service: cachedConnection.service, connection: cachedConnection.connection) {
+            case let .available(snapshot):
+                return snapshot
+            case let .unavailable(snapshot, _):
+                closeCachedConnection()
+                return snapshot
+            case .failed:
+                closeCachedConnection()
+            }
+        }
+
         var lastMessage = "Could not query Apple Silicon fan sensors."
+        var shouldCacheUnavailable = false
+        var unavailableSnapshot: FanSnapshot?
         for service in services {
-            var iterator: io_iterator_t = 0
-            let matching = IOServiceMatching(service)
-            guard IOServiceGetMatchingServices(kIOMainPortDefault, matching, &iterator) == KERN_SUCCESS else {
-                lastMessage = "Could not query \(service)."
+            let connectionResult = openConnection(service: service)
+            guard let connection = connectionResult.connection else {
+                if let message = connectionResult.message {
+                    lastMessage = message
+                    shouldCacheUnavailable = shouldCacheUnavailable || connectionResult.cacheUnavailable
+                }
                 continue
             }
-            defer { IOObjectRelease(iterator) }
 
-            let device = IOIteratorNext(iterator)
-            guard device != 0 else {
-                lastMessage = "\(service) is not exposed on this Mac."
-                continue
+            switch readFans(service: service, connection: connection) {
+            case let .available(snapshot):
+                cachedConnection = (service: service, connection: connection)
+                return snapshot
+            case let .unavailable(snapshot, cache):
+                IOServiceClose(connection)
+                lastMessage = snapshot.message ?? lastMessage
+                if cache {
+                    unavailableSnapshot = snapshot
+                }
+            case let .failed(message):
+                IOServiceClose(connection)
+                lastMessage = message
             }
-            defer { IOObjectRelease(device) }
+        }
 
-            var connection: io_connect_t = 0
-            guard IOServiceOpen(device, mach_task_self_, 0, &connection) == KERN_SUCCESS else {
-                lastMessage = "\(service) refused SMC user-client access."
-                continue
-            }
-            defer { IOServiceClose(connection) }
+        if let unavailableSnapshot {
+            cachedUnavailableSnapshot = unavailableSnapshot
+            return unavailableSnapshot
+        }
 
-            let detectedCount = Int(readUnsignedInteger(key: "FNum", connection: connection) ?? 0)
-            let probeCount = max(detectedCount, 4)
-            let attemptedKeys = (0..<probeCount).flatMap { index in
-                ["F\(index)Ac", "F\(index)Mn", "F\(index)Mx"]
-            }
+        let snapshot = FanSnapshot.unavailable(
+            lastMessage,
+            source: services.joined(separator: " / "),
+            attemptedKeys: ["FNum", "F0Ac", "F1Ac", "F2Ac", "F3Ac"]
+        )
+        if shouldCacheUnavailable {
+            cachedUnavailableSnapshot = snapshot
+        }
+        return snapshot
+        #endif
+    }
 
-            var speeds: [Int] = []
-            var minSpeeds: [Int] = []
-            var maxSpeeds: [Int] = []
-            for index in 0..<probeCount {
-                guard let rpm = readFanRPM(key: "F\(index)Ac", connection: connection), rpm >= 0 else { continue }
-                speeds.append(Int(rpm.rounded()))
-                minSpeeds.append(Int((readFanRPM(key: "F\(index)Mn", connection: connection) ?? 0).rounded()))
-                maxSpeeds.append(Int((readFanRPM(key: "F\(index)Mx", connection: connection) ?? 0).rounded()))
-            }
+    private func openConnection(service: String) -> FanConnectionOpenResult {
+        var iterator: io_iterator_t = 0
+        let matching = IOServiceMatching(service)
+        guard IOServiceGetMatchingServices(kIOMainPortDefault, matching, &iterator) == KERN_SUCCESS else {
+            return FanConnectionOpenResult(message: "Could not query \(service).", cacheUnavailable: false)
+        }
+        defer { IOObjectRelease(iterator) }
 
-            if !speeds.isEmpty {
-                return FanSnapshot(
+        let device = IOIteratorNext(iterator)
+        guard device != 0 else {
+            return FanConnectionOpenResult(message: "\(service) is not exposed on this Mac.", cacheUnavailable: true)
+        }
+        defer { IOObjectRelease(device) }
+
+        var connection: io_connect_t = 0
+        guard IOServiceOpen(device, mach_task_self_, 0, &connection) == KERN_SUCCESS else {
+            return FanConnectionOpenResult(message: "\(service) refused SMC user-client access.", cacheUnavailable: true)
+        }
+        return FanConnectionOpenResult(connection: connection)
+    }
+
+    private func closeCachedConnection() {
+        guard let cachedConnection else { return }
+        IOServiceClose(cachedConnection.connection)
+        self.cachedConnection = nil
+    }
+
+    private func readFans(service: String, connection: io_connect_t) -> FanReadResult {
+        guard let detectedCountValue = readUnsignedInteger(key: "FNum", connection: connection) else {
+            return .failed("\(service) opened, but FNum could not be read.")
+        }
+
+        let detectedCount = Int(detectedCountValue)
+        let probeCount = max(detectedCount, 4)
+        let attemptedKeys = (0..<probeCount).flatMap { index in
+            ["F\(index)Ac", "F\(index)Mn", "F\(index)Mx"]
+        }
+
+        var speeds: [Int] = []
+        var minSpeeds: [Int] = []
+        var maxSpeeds: [Int] = []
+        for index in 0..<probeCount {
+            guard let rpm = readFanRPM(key: "F\(index)Ac", connection: connection), rpm >= 0 else { continue }
+            speeds.append(Int(rpm.rounded()))
+            minSpeeds.append(Int((readFanRPM(key: "F\(index)Mn", connection: connection) ?? 0).rounded()))
+            maxSpeeds.append(Int((readFanRPM(key: "F\(index)Mx", connection: connection) ?? 0).rounded()))
+        }
+
+        if !speeds.isEmpty {
+            return .available(
+                FanSnapshot(
                     speeds: speeds,
                     minSpeeds: minSpeeds,
                     maxSpeeds: maxSpeeds,
@@ -57,15 +134,16 @@ final class SMCFanReader {
                     source: service,
                     attemptedKeys: attemptedKeys
                 )
-            }
-
-            lastMessage = detectedCount == 0
-                ? "\(service) opened, but FNum did not report fans."
-                : "\(service) reported \(detectedCount) fan(s), but RPM keys were empty."
+            )
         }
 
-        return .unavailable(lastMessage, source: services.joined(separator: " / "), attemptedKeys: ["FNum", "F0Ac", "F1Ac", "F2Ac", "F3Ac"])
-        #endif
+        let message = detectedCount == 0
+            ? "\(service) opened, but FNum did not report fans."
+            : "\(service) reported \(detectedCount) fan(s), but RPM keys were empty."
+        return .unavailable(
+            .unavailable(message, source: service, attemptedKeys: attemptedKeys),
+            cache: true
+        )
     }
 
     private func readUnsignedInteger(key: String, connection: io_connect_t) -> UInt32? {
@@ -121,6 +199,30 @@ final class SMCFanReader {
                 )
             }
         }
+    }
+}
+
+private enum FanReadResult {
+    case available(FanSnapshot)
+    case unavailable(FanSnapshot, cache: Bool)
+    case failed(String)
+}
+
+private struct FanConnectionOpenResult {
+    let connection: io_connect_t?
+    let message: String?
+    let cacheUnavailable: Bool
+
+    init(connection: io_connect_t) {
+        self.connection = connection
+        message = nil
+        cacheUnavailable = false
+    }
+
+    init(message: String, cacheUnavailable: Bool) {
+        connection = nil
+        self.message = message
+        self.cacheUnavailable = cacheUnavailable
     }
 }
 

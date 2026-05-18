@@ -130,17 +130,17 @@ MenuStat is a single executable target. The runtime topology:
 │      ├── MenuStatStatusPanel  (NSPanel, custom)                │
 │      │   └── NSHostingController<MenuStatPanelRoot>            │
 │      │       └── MenuStatPanelView  (SwiftUI)                  │
-│      └── refreshTimer  →  SystemSampler.sample()  every 5 s   │
+│      └── refreshTimer  →  serial sampling queue  every 5 s     │
 │                              │                                 │
-│                              ├── host_statistics  (CPU)        │
-│                              ├── host_statistics64  (VM)       │
-│                              ├── libproc  (per-app usage)     │
-│                              ├── GPUReader.readGPU()          │
-│                              │   └── IORegistry AGX counters  │
-│                              └── SMCFanReader.readFans()      │
-│                                  └── IOServiceOpen +           │
-│                                      IOConnectCallStructMethod │
-│                                      to AppleSMC               │
+│                              └── SystemSampler.sample()        │
+│                                  ├── host_statistics  (CPU)    │
+│                                  ├── host_statistics64  (VM)   │
+│                                  ├── libproc  (per-app usage) │
+│                                  ├── GPUReader.readGPU()      │
+│                                  │   └── cached AGX service +  │
+│                                  │       singular IOReg reads  │
+│                                  └── SMCFanReader.readFans()  │
+│                                      └── cached AppleSMC state │
 └────────────────────────────────────────────────────────────────┘
 ```
 
@@ -148,6 +148,8 @@ MenuStat is a single executable target. The runtime topology:
 
 - The UI never touches IOKit directly — it consumes immutable `SystemSnapshot` value types produced by `SystemSampler`. This is why the unit tests can cover the entire `FanSnapshot` / `MemorySnapshot` / `CPUSnapshot` surface without mocking syscalls.
 - Fans, CPU, and memory are sampled on the same 5 s cadence to keep snapshots internally consistent.
+- Sampling runs on a serial utility queue. The main thread schedules work, publishes completed snapshots, and skips overlapping ticks; if the panel opens during a hidden-panel sample, a visible app-usage sample is queued next.
+- `GPUReader` caches the AGX service after discovery and uses singular IORegistry property reads for `PerformanceStatistics` and static GPU fields, falling back to full properties only when needed. `SMCFanReader` reuses working AppleSMC connections and caches confirmed fanless results so fanless Macs do not keep probing every tick.
 
 ---
 

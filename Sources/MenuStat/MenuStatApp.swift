@@ -1,5 +1,6 @@
 import AppKit
 import Combine
+import OSLog
 import ServiceManagement
 import SwiftUI
 
@@ -31,7 +32,10 @@ struct MenuStatApp {
 }
 
 final class MenuStatAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
+    private static let samplingLogger = Logger(subsystem: "com.adhishthite.MenuStat", category: "sampling")
+
     private let sampler = SystemSampler()
+    private let samplingQueue = DispatchQueue(label: "com.adhishthite.MenuStat.sampling", qos: .utility)
     private let displayPreferences = DisplayPreferences.shared
     private var snapshot = SystemSnapshot.empty
     private var statusItem: NSStatusItem?
@@ -43,6 +47,8 @@ final class MenuStatAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
     private var globalEventMonitor: Any?
     private var preferencesCancellable: AnyCancellable?
     private var isPanelVisible = false
+    private var isSampling = false
+    private var pendingSampleIncludesAppUsage = false
     private let panelSize = NSSize(width: 442, height: 620)
     private let panelGap: CGFloat = -8
 
@@ -181,10 +187,37 @@ final class MenuStatAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
     }
 
     private func refreshSnapshot(includeAppUsage: Bool) {
-        snapshot = sampler.sample(includeAppUsage: includeAppUsage)
-        refreshStatusItem()
-        if isPanelVisible {
-            refreshPanel()
+        // Keep one sampler call in flight. Hidden-panel ticks can drop; app-usage requests coalesce into one follow-up.
+        if isSampling {
+            pendingSampleIncludesAppUsage = pendingSampleIncludesAppUsage || includeAppUsage
+            return
+        }
+
+        isSampling = true
+        samplingQueue.async { [weak self] in
+            guard let self else { return }
+            let startedAt = DispatchTime.now().uptimeNanoseconds
+            let nextSnapshot = sampler.sample(includeAppUsage: includeAppUsage)
+            let durationMs = Double(DispatchTime.now().uptimeNanoseconds - startedAt) / 1_000_000
+            Self.samplingLogger.debug(
+                "sample includeAppUsage=\(includeAppUsage, privacy: .public) durationMs=\(durationMs, privacy: .public)"
+            )
+
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                snapshot = nextSnapshot
+                isSampling = false
+                refreshStatusItem()
+                if isPanelVisible {
+                    refreshPanel()
+                }
+
+                let shouldRunPendingSample = pendingSampleIncludesAppUsage
+                pendingSampleIncludesAppUsage = false
+                if shouldRunPendingSample {
+                    refreshSnapshot(includeAppUsage: true)
+                }
+            }
         }
     }
 
