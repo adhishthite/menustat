@@ -25,6 +25,27 @@ final class GPUReaderTests: XCTestCase {
         XCTAssertNil(snapshot.message)
     }
 
+    func testParsesPerformanceStatisticsDictionaryDirectly() {
+        let snapshot = GPUReader().parseIORegistryProperties([
+            "PerformanceStatistics": [
+                "Renderer Utilization %": 24,
+                "Tiler Utilization %": 25,
+                "Device Utilization %": 26,
+                "In use system memory": 123_456
+            ],
+            "model": "Apple M3",
+            "gpu-core-count": 10
+        ])
+
+        XCTAssertEqual(snapshot.utilization ?? 0, 0.26, accuracy: 0.001)
+        XCTAssertEqual(snapshot.rendererUtilization ?? 0, 0.24, accuracy: 0.001)
+        XCTAssertEqual(snapshot.tilerUtilization ?? 0, 0.25, accuracy: 0.001)
+        XCTAssertEqual(snapshot.memoryBytes, 123_456)
+        XCTAssertEqual(snapshot.coreCount, 10)
+        XCTAssertEqual(snapshot.model, "Apple M3")
+        XCTAssertNil(snapshot.message)
+    }
+
     func testUnavailableWhenAGXEntryMissing() {
         let snapshot = GPUReader().parseIORegOutput("no accelerator here")
         XCTAssertNil(snapshot.utilization)

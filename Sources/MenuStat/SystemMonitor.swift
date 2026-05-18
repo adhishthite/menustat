@@ -323,6 +323,7 @@ struct AppUsage: Identifiable {
 }
 
 final class SystemSampler {
+    // Stateful sampler: call only from one serial executor so CPU, process, GPU, and fan baselines stay coherent.
     private var previousCPULoad: host_cpu_load_info?
     private var previousCoreLoads: [host_cpu_load_info] = []
     private var previousProcessUsage: [Int32: ProcessUsageSample] = [:]
@@ -637,31 +638,33 @@ private struct ProcessUsageSample {
 }
 
 final class GPUReader {
+    private var cachedService: io_object_t = 0
+    private var cachedModel: String?
+    private var cachedCoreCount: Int?
+
+    deinit {
+        invalidateCachedService()
+    }
+
     func readGPU() -> GPUSnapshot {
-        var iterator: io_iterator_t = 0
-        let result = IOServiceGetMatchingServices(
-            kIOMainPortDefault,
-            IOServiceMatching("AGXAccelerator"),
-            &iterator
-        )
-        guard result == KERN_SUCCESS else {
-            return .unavailable("GPU counters are not available.", source: "AGXAccelerator")
-        }
-        defer { IOObjectRelease(iterator) }
-
-        var properties: [String: Any] = [:]
-        while true {
-            let service = IOIteratorNext(iterator)
-            guard service != 0 else { break }
-            mergeProperties(from: service, into: &properties)
-            IOObjectRelease(service)
-        }
-
-        guard !properties.isEmpty else {
+        guard let service = cachedOrDiscoveredService() else {
             return .unavailable("No AGX accelerator entry was found.", source: "AGXAccelerator")
         }
 
-        return parseProperties(properties)
+        if let snapshot = fastSnapshot(from: service) {
+            return snapshot
+        }
+
+        guard let properties = properties(from: service), !properties.isEmpty else {
+            invalidateCachedService()
+            return .unavailable("GPU counters are not available.", source: "AGXAccelerator")
+        }
+
+        return parseIORegistryProperties(properties)
+    }
+
+    func parseIORegistryProperties(_ properties: [String: Any]) -> GPUSnapshot {
+        parseProperties(properties)
     }
 
     func parseIORegOutput(_ output: String) -> GPUSnapshot {
@@ -692,7 +695,73 @@ final class GPUReader {
         )
     }
 
-    private func mergeProperties(from service: io_object_t, into properties: inout [String: Any]) {
+    private func cachedOrDiscoveredService() -> io_object_t? {
+        if cachedService != 0 {
+            return cachedService
+        }
+
+        var iterator: io_iterator_t = 0
+        let result = IOServiceGetMatchingServices(
+            kIOMainPortDefault,
+            IOServiceMatching("AGXAccelerator"),
+            &iterator
+        )
+        guard result == KERN_SUCCESS else {
+            return nil
+        }
+        defer { IOObjectRelease(iterator) }
+
+        while true {
+            let service = IOIteratorNext(iterator)
+            guard service != 0 else { break }
+            guard serviceHasCounters(service) else {
+                IOObjectRelease(service)
+                continue
+            }
+            cachedService = service
+            return service
+        }
+
+        return nil
+    }
+
+    private func invalidateCachedService() {
+        guard cachedService != 0 else { return }
+        IOObjectRelease(cachedService)
+        cachedService = 0
+    }
+
+    private func serviceHasCounters(_ service: io_object_t) -> Bool {
+        if let performanceStatistics = property(named: "PerformanceStatistics", from: service) as? [String: Any],
+           percentValue(named: "Device Utilization %", in: performanceStatistics) != nil
+           || percentValue(named: "Renderer Utilization %", in: performanceStatistics) != nil
+           || percentValue(named: "Tiler Utilization %", in: performanceStatistics) != nil
+        {
+            return true
+        }
+
+        guard let properties = properties(from: service), !properties.isEmpty else { return false }
+        return percentValue(named: "Device Utilization %", in: properties) != nil
+            || percentValue(named: "Renderer Utilization %", in: properties) != nil
+            || percentValue(named: "Tiler Utilization %", in: properties) != nil
+    }
+
+    private func fastSnapshot(from service: io_object_t) -> GPUSnapshot? {
+        guard let performanceStatistics = property(named: "PerformanceStatistics", from: service) as? [String: Any],
+              !performanceStatistics.isEmpty
+        else { return nil }
+
+        cachedCoreCount = cachedCoreCount ?? integerValue(from: property(named: "gpu-core-count", from: service))
+        cachedModel = cachedModel ?? stringValue(from: property(named: "model", from: service))
+        return parseProperties(["PerformanceStatistics": performanceStatistics])
+    }
+
+    private func property(named name: String, from service: io_object_t) -> Any? {
+        IORegistryEntryCreateCFProperty(service, name as CFString, kCFAllocatorDefault, 0)?
+            .takeRetainedValue()
+    }
+
+    private func properties(from service: io_object_t) -> [String: Any]? {
         var unmanagedProperties: Unmanaged<CFMutableDictionary>?
         let result = IORegistryEntryCreateCFProperties(
             service,
@@ -702,18 +771,23 @@ final class GPUReader {
         )
         guard result == KERN_SUCCESS,
               let serviceProperties = unmanagedProperties?.takeRetainedValue() as? [String: Any]
-        else { return }
+        else { return nil }
 
-        properties.merge(serviceProperties) { current, _ in current }
+        return serviceProperties
     }
 
     private func parseProperties(_ properties: [String: Any]) -> GPUSnapshot {
-        let utilization = percentValue(named: "Device Utilization %", in: properties)
-        let renderer = percentValue(named: "Renderer Utilization %", in: properties)
-        let tiler = percentValue(named: "Tiler Utilization %", in: properties)
-        let memoryBytes = integerValue(named: "In use system memory", in: properties).map(UInt64.init)
-        let coreCount = integerValue(named: "gpu-core-count", in: properties)
-        let model = stringValue(named: "model", in: properties)
+        let performanceStatistics = properties["PerformanceStatistics"] as? [String: Any] ?? [:]
+        let utilization = percentValue(named: "Device Utilization %", in: performanceStatistics)
+            ?? percentValue(named: "Device Utilization %", in: properties)
+        let renderer = percentValue(named: "Renderer Utilization %", in: performanceStatistics)
+            ?? percentValue(named: "Renderer Utilization %", in: properties)
+        let tiler = percentValue(named: "Tiler Utilization %", in: performanceStatistics)
+            ?? percentValue(named: "Tiler Utilization %", in: properties)
+        let memoryBytes = (integerValue(named: "In use system memory", in: performanceStatistics)
+            ?? integerValue(named: "In use system memory", in: properties)).map(UInt64.init)
+        cachedCoreCount = cachedCoreCount ?? integerValue(named: "gpu-core-count", in: properties)
+        cachedModel = cachedModel ?? stringValue(named: "model", in: properties)
 
         guard utilization != nil || renderer != nil || tiler != nil else {
             return .unavailable("AGX counters were found, but utilization is not exposed.", source: "AGXAccelerator")
@@ -724,8 +798,8 @@ final class GPUReader {
             rendererUtilization: renderer,
             tilerUtilization: tiler,
             memoryBytes: memoryBytes,
-            coreCount: coreCount,
-            model: model,
+            coreCount: cachedCoreCount,
+            model: cachedModel,
             message: nil,
             source: "AGXAccelerator"
         )
@@ -746,8 +820,30 @@ final class GPUReader {
         }
     }
 
+    private func integerValue(from value: Any?) -> Int? {
+        switch value {
+        case let number as NSNumber:
+            number.intValue
+        case let string as String:
+            Int(string)
+        default:
+            nil
+        }
+    }
+
     private func stringValue(named name: String, in properties: [String: Any]) -> String? {
         switch value(named: name, in: properties) {
+        case let string as String:
+            string
+        case let data as Data:
+            String(data: data, encoding: .utf8)?.trimmingCharacters(in: .controlCharacters)
+        default:
+            nil
+        }
+    }
+
+    private func stringValue(from value: Any?) -> String? {
+        switch value {
         case let string as String:
             string
         case let data as Data:
