@@ -118,47 +118,12 @@ private struct HeaderRow: View {
     let isVisible: Bool
 
     var body: some View {
-        TimelineView(.periodic(from: .now, by: 1)) { context in
-            HStack(alignment: .center, spacing: 10) {
-                LiveryBar(tint: Brand.cpu)
-
-                VStack(alignment: .leading, spacing: 5) {
-                    HStack(spacing: 6) {
-                        Text("MENUSTAT")
-                            .font(.system(size: 13, weight: .black, design: .monospaced))
-                            .tracking(2.4)
-                            .foregroundStyle(Brand.text)
-                        Text("//")
-                            .microLabel(Brand.micro)
-                        Text("APPLE M-SERIES")
-                            .microLabel()
-                    }
-                    HStack(spacing: 8) {
-                        StatusDot(color: Brand.mem, isActive: isVisible)
-                        Text("LIVE")
-                            .microLabel(Brand.mute)
-                        Text("·")
-                            .microLabel(Brand.micro)
-                        Text("REFRESH 5s")
-                            .microLabel(Brand.mute)
-                        Text("·")
-                            .microLabel(Brand.micro)
-                        Text("UP \(snapshot.uptime.uptimeShortString.uppercased())")
-                            .microLabel(Brand.mute)
-                    }
-                }
-
-                Spacer()
-
-                VStack(alignment: .trailing, spacing: 5) {
-                    Text(Self.clockFormatter.string(from: context.date))
-                        .numeric(15, weight: .bold)
-                    Text("T-\(timeAgo(from: snapshot.updatedAt, now: context.date))")
-                        .microLabel(Brand.mute)
-                }
+        if isVisible {
+            TimelineView(.periodic(from: .now, by: 1)) { context in
+                content(date: context.date)
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 15)
+        } else {
+            content(date: snapshot.updatedAt)
         }
     }
 
@@ -167,6 +132,49 @@ private struct HeaderRow: View {
         formatter.dateFormat = "HH:mm:ss"
         return formatter
     }()
+
+    private func content(date: Date) -> some View {
+        HStack(alignment: .center, spacing: 10) {
+            LiveryBar(tint: Brand.cpu)
+
+            VStack(alignment: .leading, spacing: 5) {
+                HStack(spacing: 6) {
+                    Text("MENUSTAT")
+                        .font(.system(size: 13, weight: .black, design: .monospaced))
+                        .tracking(2.4)
+                        .foregroundStyle(Brand.text)
+                    Text("//")
+                        .microLabel(Brand.micro)
+                    Text("APPLE M-SERIES")
+                        .microLabel()
+                }
+                HStack(spacing: 8) {
+                    StatusDot(color: Brand.mem, isActive: isVisible)
+                    Text("LIVE")
+                        .microLabel(Brand.mute)
+                    Text("·")
+                        .microLabel(Brand.micro)
+                    Text("REFRESH 5s")
+                        .microLabel(Brand.mute)
+                    Text("·")
+                        .microLabel(Brand.micro)
+                    Text("UP \(snapshot.uptime.uptimeShortString.uppercased())")
+                        .microLabel(Brand.mute)
+                }
+            }
+
+            Spacer()
+
+            VStack(alignment: .trailing, spacing: 5) {
+                Text(Self.clockFormatter.string(from: date))
+                    .numeric(15, weight: .bold)
+                Text("T-\(timeAgo(from: snapshot.updatedAt, now: date))")
+                    .microLabel(Brand.mute)
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 15)
+    }
 
     private func timeAgo(from date: Date, now: Date) -> String {
         let seconds = Int(now.timeIntervalSince(date))
@@ -1102,10 +1110,16 @@ private extension FanSnapshot {
 
 private extension UInt64 {
     var formattedBytesShort: String {
+        ByteFormatters.shortBytes.string(fromByteCount: Int64(self)).replacingOccurrences(of: " ", with: "")
+    }
+}
+
+private enum ByteFormatters {
+    static let shortBytes: ByteCountFormatter = {
         let formatter = ByteCountFormatter()
         formatter.countStyle = .memory
         formatter.allowedUnits = [.useGB, .useMB, .useKB]
         formatter.zeroPadsFractionDigits = false
-        return formatter.string(fromByteCount: Int64(self)).replacingOccurrences(of: " ", with: "")
-    }
+        return formatter
+    }()
 }

@@ -67,7 +67,8 @@ final class MenuStatAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
         statusMenu = menu
 
         let timer = Timer(timeInterval: 5, repeats: true) { [weak self] _ in
-            self?.refreshSnapshot()
+            guard let self else { return }
+            refreshSnapshot(includeAppUsage: isPanelVisible)
         }
         refreshTimer = timer
         RunLoop.main.add(timer, forMode: .common)
@@ -77,11 +78,12 @@ final class MenuStatAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
         preferencesCancellable = displayPreferences.objectWillChange.sink { [weak self] _ in
             DispatchQueue.main.async {
                 self?.refreshStatusItem()
-                self?.refreshPanel()
-                self?.rebuildStatusMenu()
+                if self?.isPanelVisible == true {
+                    self?.refreshPanel()
+                }
             }
         }
-        refreshSnapshot()
+        refreshSnapshot(includeAppUsage: false)
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -133,7 +135,7 @@ final class MenuStatAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
     @objc
     func toggleLaunchAtLogin(_ sender: Any?) {
         do {
-            if isLaunchAtLoginEnabled {
+            if isLaunchAtLoginEnabled() {
                 try SMAppService.mainApp.unregister()
             } else {
                 try SMAppService.mainApp.register()
@@ -157,6 +159,7 @@ final class MenuStatAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
         panel.setFrame(frame, display: true)
         panel.makeKeyAndOrderFront(nil)
         panel.orderFrontRegardless()
+        refreshSnapshotSoon(includeAppUsage: true)
     }
 
     private func hidePanel() {
@@ -167,15 +170,22 @@ final class MenuStatAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
 
     private func showStatusMenu() {
         guard let menu = statusMenu, let button = statusItem?.button else { return }
-        rebuildStatusMenu()
         menu.popUp(positioning: nil, at: NSPoint(x: 0, y: button.bounds.maxY + 2), in: button)
+        refreshSnapshotSoon(includeAppUsage: true)
     }
 
-    private func refreshSnapshot() {
-        snapshot = sampler.sample()
+    private func refreshSnapshotSoon(includeAppUsage: Bool) {
+        DispatchQueue.main.async { [weak self] in
+            self?.refreshSnapshot(includeAppUsage: includeAppUsage)
+        }
+    }
+
+    private func refreshSnapshot(includeAppUsage: Bool) {
+        snapshot = sampler.sample(includeAppUsage: includeAppUsage)
         refreshStatusItem()
-        refreshPanel()
-        rebuildStatusMenu()
+        if isPanelVisible {
+            refreshPanel()
+        }
     }
 
     private func refreshStatusItem() {
@@ -206,12 +216,12 @@ final class MenuStatAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
         "Copyright © \(Self.currentYear) Adhish Thite"
     }
 
-    private var isLaunchAtLoginEnabled: Bool {
-        SMAppService.mainApp.status == .enabled
+    private func isLaunchAtLoginEnabled(_ status: SMAppService.Status = SMAppService.mainApp.status) -> Bool {
+        status == .enabled
     }
 
-    private var launchAtLoginTitle: String {
-        switch SMAppService.mainApp.status {
+    private func launchAtLoginTitle(_ status: SMAppService.Status = SMAppService.mainApp.status) -> String {
+        switch status {
         case .enabled:
             "Launch at Login"
         case .requiresApproval:
@@ -360,13 +370,14 @@ final class MenuStatAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
         openItem.isEnabled = true
         menu.addItem(openItem)
 
+        let launchAtLoginStatus = SMAppService.mainApp.status
         let launchAtLoginItem = NSMenuItem(
-            title: launchAtLoginTitle,
+            title: launchAtLoginTitle(launchAtLoginStatus),
             action: #selector(toggleLaunchAtLogin(_:)),
             keyEquivalent: ""
         )
         launchAtLoginItem.target = self
-        launchAtLoginItem.state = isLaunchAtLoginEnabled ? .on : .off
+        launchAtLoginItem.state = isLaunchAtLoginEnabled(launchAtLoginStatus) ? .on : .off
         launchAtLoginItem.isEnabled = true
         menu.addItem(launchAtLoginItem)
 

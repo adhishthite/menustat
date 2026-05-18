@@ -56,6 +56,17 @@ final class CPUSnapshotTests: XCTestCase {
     }
 }
 
+final class AppUsageTests: XCTestCase {
+    func testAppNameFromPathAvoidsBundleSuffix() {
+        XCTAssertEqual(SystemSampler.appName(from: "/Applications/Foo.app"), "Foo")
+        XCTAssertEqual(SystemSampler.appName(from: "/tmp/MenuStat.app/Contents/MacOS/MenuStat"), "MenuStat")
+    }
+
+    func testAppNameFromCommandFallsBackToInput() {
+        XCTAssertEqual(SystemSampler.appName(from: "helper"), "helper")
+    }
+}
+
 final class FormattingTests: XCTestCase {
     func testPercentStringRoundsToInteger() {
         XCTAssertEqual(0.0.percentString, "0%")

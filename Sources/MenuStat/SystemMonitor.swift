@@ -327,11 +327,20 @@ final class SystemSampler {
     private var previousCoreLoads: [host_cpu_load_info] = []
     private var previousProcessUsage: [Int32: ProcessUsageSample] = [:]
     private var previousProcessSampleDate: Date?
+    private var latestAppUsage = AppUsageSnapshot.empty
+    private var processNameCache: [Int32: String] = [:]
     private let fanReader = SMCFanReader()
     private let gpuReader = GPUReader()
 
-    func sample() -> SystemSnapshot {
+    func sample(includeAppUsage: Bool = true) -> SystemSnapshot {
         let memory = sampleMemory()
+        let apps: AppUsageSnapshot
+        if includeAppUsage {
+            apps = sampleAppUsage(totalMemory: memory.total)
+        } else {
+            resetProcessUsageBaseline()
+            apps = latestAppUsage
+        }
         return SystemSnapshot(
             cpu: sampleCPU(),
             coreCount: ProcessInfo.processInfo.processorCount,
@@ -339,10 +348,16 @@ final class SystemSampler {
             gpu: gpuReader.readGPU(),
             pressure: pressure(for: memory),
             fans: fanReader.readFans(),
-            apps: sampleAppUsage(totalMemory: memory.total),
+            apps: apps,
             uptime: ProcessInfo.processInfo.systemUptime,
             updatedAt: Date()
         )
+    }
+
+    private func resetProcessUsageBaseline() {
+        guard previousProcessSampleDate != nil || !previousProcessUsage.isEmpty else { return }
+        previousProcessUsage.removeAll(keepingCapacity: true)
+        previousProcessSampleDate = nil
     }
 
     private func sampleCPU() -> CPUSnapshot {
@@ -478,10 +493,17 @@ final class SystemSampler {
         var currentUsage: [Int32: ProcessUsageSample] = [:]
 
         var grouped: [String: (cpu: Double, memory: UInt64)] = [:]
+        let processIdentifiers = allProcessIdentifiers()
+        var livePIDs = Set<Int32>()
 
-        for pid in allProcessIdentifiers() {
+        for pid in processIdentifiers {
             guard let sample = processUsage(for: pid) else { continue }
             currentUsage[pid] = sample
+            livePIDs.insert(pid)
+
+            if let previousSample = previousUsage[pid], sample.totalCPUTime < previousSample.totalCPUTime {
+                processNameCache.removeValue(forKey: pid)
+            }
 
             let name = appName(for: pid)
             guard !name.isEmpty else { continue }
@@ -498,6 +520,10 @@ final class SystemSampler {
 
         previousProcessUsage = currentUsage
         previousProcessSampleDate = now
+        let stalePIDs = processNameCache.keys.filter { !livePIDs.contains($0) }
+        for pid in stalePIDs {
+            processNameCache.removeValue(forKey: pid)
+        }
 
         let apps = grouped.map { name, usage in
             let memoryContribution = totalMemory > 0 ? (Double(usage.memory) / Double(totalMemory)) * 100 : 0
@@ -510,11 +536,13 @@ final class SystemSampler {
             )
         }
 
-        return AppUsageSnapshot(
+        let snapshot = AppUsageSnapshot(
             topCPU: Array(apps.sorted { $0.cpuPercent > $1.cpuPercent }.prefix(10)),
             topMemory: Array(apps.sorted { $0.memoryBytes > $1.memoryBytes }.prefix(10)),
             topHeat: Array(apps.sorted { $0.heatScore > $1.heatScore }.prefix(10))
         )
+        latestAppUsage = snapshot
+        return snapshot
     }
 
     private func allProcessIdentifiers() -> [Int32] {
@@ -569,22 +597,30 @@ final class SystemSampler {
     }
 
     private func appName(for pid: Int32) -> String {
+        if let cachedName = processNameCache[pid] {
+            return cachedName
+        }
+
         var pathBuffer = Array(repeating: CChar(0), count: Int(MAXPATHLEN))
         let pathLength = proc_pidpath(pid, &pathBuffer, UInt32(pathBuffer.count))
         if pathLength > 0 {
             let path = String(cString: pathBuffer)
-            return appName(from: path)
+            let name = Self.appName(from: path)
+            processNameCache[pid] = name
+            return name
         }
 
         var nameBuffer = Array(repeating: CChar(0), count: 2 * Int(MAXCOMLEN))
         let nameLength = proc_name(pid, &nameBuffer, UInt32(nameBuffer.count))
         guard nameLength > 0 else { return "" }
-        return String(cString: nameBuffer)
+        let name = String(cString: nameBuffer)
             .trimmingCharacters(in: .whitespacesAndNewlines)
+        processNameCache[pid] = name
+        return name
     }
 
-    private func appName(from command: String) -> String {
-        let pathName = URL(fileURLWithPath: command).lastPathComponent
+    static func appName(from command: String) -> String {
+        let pathName = (command as NSString).lastPathComponent
         let name = pathName.isEmpty ? command : pathName
         if name == "MenuStat" {
             return "MenuStat"
