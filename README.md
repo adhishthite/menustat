@@ -13,7 +13,7 @@ A lightweight macOS menu-bar system monitor for Apple Silicon — CPU, unified m
 - **Memory pressure** — system pressure gauge (normal / moderate / high) with a heat-proxy "likely culprit" list.
 - **Fans** — real-time RPM per fan, normalized range percentage, status bucket (Quiet / Cooling / High) sourced from `AppleSMCKeysEndpoint`. See [fan reading caveats](#fan-reading-caveats).
 - **Menu-bar resident** — runs as an `LSUIElement` (no Dock icon, no window).
-- **Refreshes every 5 s** — low overhead, sampled on a single timer.
+- **Refreshes every 5 s** — headline metrics stay current; heavier top-app sampling runs when details are visible.
 
 ## Screenshots
 
@@ -33,7 +33,7 @@ A lightweight macOS menu-bar system monitor for Apple Silicon — CPU, unified m
 ## Install
 
 1. Download the latest release:
-   [MenuStat-0.1.4.dmg](https://github.com/adhishthite/menustat/releases/download/v0.1.4/MenuStat-0.1.4.dmg)
+   [MenuStat-0.1.5.dmg](https://github.com/adhishthite/menustat/releases/download/v0.1.5/MenuStat-0.1.5.dmg)
 2. Open the DMG.
 3. Drag `MenuStat.app` into `Applications`.
 4. Open `MenuStat.app`.
