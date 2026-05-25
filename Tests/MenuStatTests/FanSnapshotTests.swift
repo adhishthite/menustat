@@ -1,5 +1,5 @@
 import XCTest
-@testable import MenuStat
+@testable import MenuStatCore
 
 final class FanSnapshotTests: XCTestCase {
     private func make(speeds: [Int], min: [Int] = [], max: [Int] = []) -> FanSnapshot {

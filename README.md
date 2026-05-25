@@ -13,6 +13,7 @@ A lightweight macOS menu-bar system monitor for Apple Silicon — CPU, unified m
 - **Memory pressure** — system pressure gauge (normal / moderate / high) with a heat-proxy "likely culprit" list.
 - **Fans** — real-time RPM per fan, normalized range percentage, status bucket (Quiet / Cooling / High) sourced from `AppleSMCKeysEndpoint`. See [fan reading caveats](#fan-reading-caveats).
 - **Menu-bar resident** — runs as an `LSUIElement` (no Dock icon, no window).
+- **Companion CLI** — `menustat` provides a live terminal dashboard plus `snapshot`, `top`, and `fans` commands with JSON output for scripts.
 - **Refreshes every 5 s** — headline metrics stay current; heavier top-app sampling runs when details are visible.
 
 ## Screenshots
@@ -26,14 +27,16 @@ A lightweight macOS menu-bar system monitor for Apple Silicon — CPU, unified m
 | | |
 |---|---|
 | OS | macOS 13.0 (Ventura) or later |
-| Architecture | Apple Silicon (`arm64`) only |
+| Architecture | Apple Silicon required (M1 or later). Intel Macs show an unsupported-hardware alert and quit. |
 
 ---
 
 ## Install
 
-1. Download the latest release:
-   [MenuStat-0.2.0.dmg](https://github.com/adhishthite/menustat/releases/download/v0.2.0/MenuStat-0.2.0.dmg)
+> **Apple Silicon required:** MenuStat is for Apple Silicon Macs (M1 or later). On Intel Macs, the app shows an unsupported-hardware alert and quits.
+
+1. Download the latest Apple Silicon release:
+   [MenuStat-0.3.0.dmg](https://github.com/adhishthite/menustat/releases/download/v0.3.0/MenuStat-0.3.0.dmg)
 2. Open the DMG.
 3. Drag `MenuStat.app` into `Applications`.
 4. Open `MenuStat.app`.
@@ -45,6 +48,18 @@ To start MenuStat automatically when you sign in: right-click the menu-bar item 
 To quit: right-click the menu-bar item → *Quit*.
 
 MenuStat is Developer ID signed and notarized. If macOS asks for confirmation the first time you open it, choose **Open**.
+
+### CLI install
+
+The release also includes `MenuStatCLI-0.3.0.zip` for terminal users:
+
+```bash
+unzip MenuStatCLI-0.3.0.zip
+sudo install -m 755 menustat /usr/local/bin/menustat
+menustat
+```
+
+The CLI is observe-only. It reads the same telemetry as the menu-bar app, but it does not launch, quit, or configure `MenuStat.app`.
 
 ---
 
@@ -65,9 +80,19 @@ cd menustat
 make install-tools     # one-time: SwiftLint + SwiftFormat via Homebrew
 make install-hooks     # one-time: link the pre-commit hook
 make run               # build, bundle, sign, launch the menu-bar app
+swift run menustat     # run the CLI dashboard
 ```
 
 For source builds, you can also quit from the terminal with `pkill -x MenuStat`.
+
+Useful CLI commands:
+
+```bash
+swift run menustat snapshot
+swift run menustat snapshot --json
+swift run menustat top --by cpu --limit 5
+swift run menustat fans
+```
 
 ---
 
@@ -97,15 +122,21 @@ For source builds, you can also quit from the terminal with `pkill -x MenuStat`.
 
 ```
 .
-├── Package.swift                    # SPM manifest (executable + test target)
+├── Package.swift                    # SPM manifest (shared core + app/CLI executables)
 ├── Makefile                         # Single entry point for all dev tasks
+├── Sources/MenuStatCore/
+│   ├── SystemMonitor.swift          # Pure value types + SystemSampler (Mach/libproc/IOKit)
+│   ├── SMCFanReader.swift           # AppleSMC IOKit client
+│   └── HardwareSupport.swift        # Apple Silicon support checks
 ├── Sources/MenuStat/
 │   ├── MenuStatApp.swift            # NSApp delegate, status item, panel wiring
 │   ├── MenuStatPanelView.swift      # SwiftUI panel: header, metric tiles, detail layer
-│   ├── SystemMonitor.swift          # Pure value types + SystemSampler (Mach/libproc/IOKit)
-│   └── SMCFanReader.swift           # AppleSMC IOKit client
+│   └── DisplayPreferences.swift     # UserDefaults-backed panel/menu visibility settings
+├── Sources/MenuStatCLIKit/          # ArgumentParser commands, terminal renderer, JSON output
+├── Sources/MenuStatCLI/             # Thin CLI entrypoint
 ├── Tests/MenuStatTests/
 │   ├── FanSnapshotTests.swift       # Pure-logic tests for fan status / bucketing
+│   ├── CLIRendererTests.swift       # CLI renderer / JSON / parser tests
 │   └── MemorySnapshotTests.swift    # Memory / CPU / formatter tests
 ├── script/
 │   ├── build_and_run.sh             # Build → bundle → codesign → launch pipeline
@@ -120,35 +151,36 @@ For source builds, you can also quit from the terminal with `pkill -x MenuStat`.
 
 ## Architecture
 
-MenuStat is a single executable target. The runtime topology:
+MenuStat is a SwiftPM package with a shared telemetry core and two executables:
 
 ```
 ┌────────────────────────────────────────────────────────────────┐
-│  NSApplication  (LSUIElement — no Dock, no window)             │
+│  MenuStatCore                                                   │
+│  └── SystemSampler.sample()                                     │
+│      ├── host_statistics / host_statistics64  (CPU + VM)        │
+│      ├── libproc  (per-app usage)                               │
+│      ├── GPUReader.readGPU()  (AGX IORegistry counters)         │
+│      └── SMCFanReader.readFans()  (AppleSMC keys)               │
+├────────────────────────────────────────────────────────────────┤
+│  MenuStat.app  (LSUIElement — no Dock, no window)               │
 │  └── MenuStatAppDelegate                                       │
 │      ├── NSStatusItem  ("MS" in menu bar)                      │
 │      ├── MenuStatStatusPanel  (NSPanel, custom)                │
 │      │   └── NSHostingController<MenuStatPanelRoot>            │
 │      │       └── MenuStatPanelView  (SwiftUI)                  │
 │      └── refreshTimer  →  serial sampling queue  every 5 s     │
-│                              │                                 │
-│                              └── SystemSampler.sample()        │
-│                                  ├── host_statistics  (CPU)    │
-│                                  ├── host_statistics64  (VM)   │
-│                                  ├── libproc  (per-app usage) │
-│                                  ├── GPUReader.readGPU()      │
-│                                  │   └── cached AGX service +  │
-│                                  │       singular IOReg reads  │
-│                                  └── SMCFanReader.readFans()  │
-│                                      └── cached AppleSMC state │
+├────────────────────────────────────────────────────────────────┤
+│  menustat                                                       │
+│  └── live dashboard / snapshot / top / fans commands            │
 └────────────────────────────────────────────────────────────────┘
 ```
 
 **Design notes:**
 
-- The UI never touches IOKit directly — it consumes immutable `SystemSnapshot` value types produced by `SystemSampler`. This is why the unit tests can cover the entire `FanSnapshot` / `MemorySnapshot` / `CPUSnapshot` surface without mocking syscalls.
+- The UI and CLI never touch IOKit directly — they consume immutable `SystemSnapshot` value types produced by `SystemSampler`. This is why the unit tests can cover the entire `FanSnapshot` / `MemorySnapshot` / `CPUSnapshot` surface without mocking syscalls.
 - Fans, CPU, and memory are sampled on the same 5 s cadence to keep snapshots internally consistent.
 - Sampling runs on a serial utility queue. The main thread schedules work, publishes completed snapshots, and skips overlapping ticks; if the panel opens during a hidden-panel sample, a visible app-usage sample is queued next.
+- The CLI warms up sampling before `snapshot` and `top` so delta-based CPU and process readings are useful; `--instant` skips that warm-up for scripts that need the fastest possible response.
 - `GPUReader` caches the AGX service after discovery and uses singular IORegistry property reads for `PerformanceStatistics` and static GPU fields, falling back to full properties only when needed. `SMCFanReader` reuses working AppleSMC connections and caches confirmed fanless results so fanless Macs do not keep probing every tick.
 
 ---
@@ -175,7 +207,7 @@ MenuStat ships outside the Mac App Store as a Developer ID signed and notarized 
 | Team ID | `TEAM_ID` locally, `APPLE_TEAM_ID` in GitHub Actions |
 | Signing identity | `SIGNING_IDENTITY` locally, `DEVELOPER_ID_SIGNING_IDENTITY` in GitHub Actions |
 | Minimum macOS | `13.0` |
-| Architecture | `arm64` |
+| Architecture | Universal app and CLI wrappers (`arm64` monitor + `x86_64` unsupported-hardware alert); Apple Silicon required |
 
 Build a signed local release:
 
@@ -187,8 +219,10 @@ That creates:
 
 ```text
 dist/work/MenuStat.app
+dist/work/cli/menustat
 dist/MenuStat-0.1.0.zip
 dist/MenuStat-0.1.0.dmg
+dist/MenuStatCLI-0.1.0.zip
 ```
 
 Published downloads live under GitHub Releases. The GitHub Packages tab is intentionally unused because MenuStat ships as notarized macOS app artifacts, not as a package-registry dependency.
@@ -213,7 +247,7 @@ Then run:
 TEAM_ID="$TEAM_ID" NOTARY_PROFILE="$NOTARY_PROFILE" make package-release
 ```
 
-The script submits the app zip to Apple's notary service, staples the notarization ticket to `MenuStat.app`, verifies Gatekeeper assessment, then writes the final distributable zip.
+The script submits the app zip to Apple's notary service, staples the notarization ticket to `MenuStat.app`, notarizes the standalone CLI zip, verifies Gatekeeper assessment, then writes the final distributable zips.
 
 ### Adding a new metric
 

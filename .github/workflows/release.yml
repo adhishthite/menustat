@@ -151,8 +151,13 @@ jobs:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
           spctl --assess --type execute --verbose dist/work/MenuStat.app
+          codesign --verify --strict --verbose=2 dist/work/cli/menustat
           spctl --assess --type open --context context:primary-signature --verbose "dist/MenuStat-$VERSION.dmg"
-          shasum -a 256 "dist/MenuStat-$VERSION.dmg" "dist/MenuStat-$VERSION.zip" | tee "dist/MenuStat-$VERSION-checksums.txt"
+          shasum -a 256 \
+            "dist/MenuStat-$VERSION.dmg" \
+            "dist/MenuStat-$VERSION.zip" \
+            "dist/MenuStatCLI-$VERSION.zip" |
+            tee "dist/MenuStat-$VERSION-checksums.txt"
 
       - name: Publish GitHub Release
         env:
@@ -166,8 +171,10 @@ jobs:
             echo "MenuStat $VERSION"
             echo
             echo "Notarized public build for Apple Silicon Macs running macOS 13 or later."
+            echo "Intel Macs are not supported; the app shows an unsupported-hardware alert and quits."
             echo
             echo "Recommended install: download MenuStat-$VERSION.dmg, open it, drag MenuStat.app to Applications, then open MenuStat."
+            echo "CLI install: download MenuStatCLI-$VERSION.zip, unzip it, then install the menustat binary somewhere on PATH."
             echo
             echo "Checksums:"
             echo '```text'
@@ -179,6 +186,7 @@ jobs:
             gh release upload "$tag" \
               "dist/MenuStat-$VERSION.dmg" \
               "dist/MenuStat-$VERSION.zip" \
+              "dist/MenuStatCLI-$VERSION.zip" \
               "dist/MenuStat-$VERSION-checksums.txt" \
               --clobber
             gh release edit "$tag" --title "MenuStat $VERSION" --notes-file "$notes" --latest
@@ -186,6 +194,7 @@ jobs:
             gh release create "$tag" \
               "dist/MenuStat-$VERSION.dmg" \
               "dist/MenuStat-$VERSION.zip" \
+              "dist/MenuStatCLI-$VERSION.zip" \
               "dist/MenuStat-$VERSION-checksums.txt" \
               --title "MenuStat $VERSION" \
               --notes-file "$notes" \

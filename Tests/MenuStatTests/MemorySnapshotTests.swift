@@ -1,5 +1,5 @@
 import XCTest
-@testable import MenuStat
+@testable import MenuStatCore
 
 final class MemorySnapshotTests: XCTestCase {
     private func make(total: UInt64, used: UInt64, free: UInt64 = 0, inactive: UInt64 = 0, speculative: UInt64 = 0) -> MemorySnapshot {
@@ -54,12 +54,22 @@ final class CPUSnapshotTests: XCTestCase {
         let snapshot = CPUSnapshot.empty
         XCTAssertEqual(snapshot.busiestCore, snapshot.total)
     }
+
+    func testCPUTickDeltaWrapsInsteadOfUnderflowing() {
+        XCTAssertEqual(SystemSampler.cpuTickDelta(current: 15, previous: 10), 5)
+        XCTAssertEqual(SystemSampler.cpuTickDelta(current: 3, previous: UInt32.max - 1), 5)
+    }
 }
 
 final class AppUsageTests: XCTestCase {
     func testAppNameFromPathAvoidsBundleSuffix() {
         XCTAssertEqual(SystemSampler.appName(from: "/Applications/Foo.app"), "Foo")
         XCTAssertEqual(SystemSampler.appName(from: "/tmp/MenuStat.app/Contents/MacOS/MenuStat"), "MenuStat")
+    }
+
+    func testAppNameOnlyStripsTrailingBundleSuffix() {
+        XCTAssertEqual(SystemSampler.appName(from: "helper.app.worker"), "helper.app.worker")
+        XCTAssertEqual(SystemSampler.appName(from: "Some.app"), "Some")
     }
 
     func testAppNameFromCommandFallsBackToInput() {

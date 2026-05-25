@@ -7,7 +7,12 @@ The workflow builds, signs, notarizes, staples, verifies, and uploads:
 
 - `MenuStat-X.Y.Z.dmg`
 - `MenuStat-X.Y.Z.zip`
+- `MenuStatCLI-X.Y.Z.zip`
 - `MenuStat-X.Y.Z-checksums.txt`
+
+MenuStat is supported only on Apple Silicon Macs running macOS 13 or later. The
+release app includes an `x86_64` compatibility slice only so Intel Macs can show
+an unsupported-hardware alert and quit.
 
 ## Required GitHub Configuration
 
@@ -83,11 +88,15 @@ After the workflow completes:
 ```bash
 gh release view v0.1.3 --json assets,url,isDraft,isPrerelease
 gh release download v0.1.3 --pattern 'MenuStat-0.1.3.*' --dir /tmp/menustat-release-check
+gh release download v0.1.3 --pattern 'MenuStatCLI-0.1.3.zip' --dir /tmp/menustat-release-check
 shasum -a 256 /tmp/menustat-release-check/MenuStat-0.1.3.*
+shasum -a 256 /tmp/menustat-release-check/MenuStatCLI-0.1.3.zip
 ```
 
-The DMG should be Gatekeeper accepted:
+The DMG should be Gatekeeper accepted and the extracted CLI should retain a valid Developer ID signature:
 
 ```bash
 spctl --assess --type open --context context:primary-signature --verbose MenuStat-0.1.3.dmg
+unzip /tmp/menustat-release-check/MenuStatCLI-0.1.3.zip -d /tmp/menustat-cli-check
+codesign --verify --strict --verbose=2 /tmp/menustat-cli-check/menustat
 ```

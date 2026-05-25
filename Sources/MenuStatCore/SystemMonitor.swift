@@ -3,22 +3,22 @@ import Foundation
 import IOKit
 import MachO
 
-struct SystemSnapshot {
-    let cpu: CPUSnapshot
-    let coreCount: Int
-    let memory: MemorySnapshot
-    let gpu: GPUSnapshot
-    let pressure: MemoryPressure
-    let fans: FanSnapshot
-    let apps: AppUsageSnapshot
-    let uptime: TimeInterval
-    let updatedAt: Date
+public struct SystemSnapshot {
+    public let cpu: CPUSnapshot
+    public let coreCount: Int
+    public let memory: MemorySnapshot
+    public let gpu: GPUSnapshot
+    public let pressure: MemoryPressure
+    public let fans: FanSnapshot
+    public let apps: AppUsageSnapshot
+    public let uptime: TimeInterval
+    public let updatedAt: Date
 
-    var menuTitle: String {
+    public var menuTitle: String {
         "CPU \(cpu.total.percentString)  RAM \(memory.usedPercent.percentString)  GPU \(gpu.tileValue)"
     }
 
-    static let empty = SystemSnapshot(
+    public static let empty = SystemSnapshot(
         cpu: .empty,
         coreCount: ProcessInfo.processInfo.processorCount,
         memory: .unavailable(total: ProcessInfo.processInfo.physicalMemory),
@@ -30,7 +30,7 @@ struct SystemSnapshot {
         updatedAt: Date()
     )
 
-    static let unsupported = SystemSnapshot(
+    public static let unsupported = SystemSnapshot(
         cpu: .empty,
         coreCount: ProcessInfo.processInfo.processorCount,
         memory: .unavailable(total: ProcessInfo.processInfo.physicalMemory),
@@ -43,28 +43,28 @@ struct SystemSnapshot {
     )
 }
 
-struct GPUSnapshot {
-    let utilization: Double?
-    let rendererUtilization: Double?
-    let tilerUtilization: Double?
-    let memoryBytes: UInt64?
-    let coreCount: Int?
-    let model: String?
-    let message: String?
-    let source: String
+public struct GPUSnapshot {
+    public let utilization: Double?
+    public let rendererUtilization: Double?
+    public let tilerUtilization: Double?
+    public let memoryBytes: UInt64?
+    public let coreCount: Int?
+    public let model: String?
+    public let message: String?
+    public let source: String
 
-    var tileValue: String {
+    public var tileValue: String {
         utilization?.percentString ?? "--"
     }
 
-    var tileCaption: String {
+    public var tileCaption: String {
         if let coreCount {
             return "\(coreCount) CORES"
         }
         return "AGX"
     }
 
-    var statusTitle: String {
+    public var statusTitle: String {
         guard let utilization else { return "Unavailable" }
         switch utilization {
         case ..<0.30:
@@ -76,11 +76,11 @@ struct GPUSnapshot {
         }
     }
 
-    var detail: String {
+    public var detail: String {
         message ?? "AGX accelerator counters"
     }
 
-    static func unavailable(_ message: String, source: String = "IORegistry") -> GPUSnapshot {
+    public static func unavailable(_ message: String, source: String = "IORegistry") -> GPUSnapshot {
         GPUSnapshot(
             utilization: nil,
             rendererUtilization: nil,
@@ -94,43 +94,43 @@ struct GPUSnapshot {
     }
 }
 
-struct CPUSnapshot {
-    let total: Double
-    let user: Double
-    let system: Double
-    let idle: Double
-    let nice: Double
-    let perCore: [Double]
+public struct CPUSnapshot {
+    public let total: Double
+    public let user: Double
+    public let system: Double
+    public let idle: Double
+    public let nice: Double
+    public let perCore: [Double]
 
-    var busiestCore: Double {
+    public var busiestCore: Double {
         perCore.max() ?? total
     }
 
-    static let empty = CPUSnapshot(total: 0, user: 0, system: 0, idle: 1, nice: 0, perCore: [])
+    public static let empty = CPUSnapshot(total: 0, user: 0, system: 0, idle: 1, nice: 0, perCore: [])
 }
 
-struct MemorySnapshot {
-    let total: UInt64
-    let used: UInt64
-    let free: UInt64
-    let active: UInt64
-    let inactive: UInt64
-    let wired: UInt64
-    let compressed: UInt64
-    let speculative: UInt64
-    let pageSize: UInt64
+public struct MemorySnapshot {
+    public let total: UInt64
+    public let used: UInt64
+    public let free: UInt64
+    public let active: UInt64
+    public let inactive: UInt64
+    public let wired: UInt64
+    public let compressed: UInt64
+    public let speculative: UInt64
+    public let pageSize: UInt64
 
-    var usedPercent: Double {
+    public var usedPercent: Double {
         guard total > 0 else { return 0 }
         return Double(used) / Double(total)
     }
 
-    var freePercent: Double {
+    public var freePercent: Double {
         guard total > 0 else { return 0 }
         return Double(free + inactive + speculative) / Double(total)
     }
 
-    static func unavailable(total: UInt64) -> MemorySnapshot {
+    public static func unavailable(total: UInt64) -> MemorySnapshot {
         MemorySnapshot(
             total: total,
             used: 0,
@@ -145,12 +145,12 @@ struct MemorySnapshot {
     }
 }
 
-enum MemoryPressure {
+public enum MemoryPressure {
     case normal
     case moderate
     case high
 
-    var title: String {
+    public var title: String {
         switch self {
         case .normal: "Normal"
         case .moderate: "Moderate"
@@ -158,7 +158,7 @@ enum MemoryPressure {
         }
     }
 
-    var detail: String {
+    public var detail: String {
         switch self {
         case .normal: "Plenty of readily available memory."
         case .moderate: "Memory is getting tighter."
@@ -166,7 +166,7 @@ enum MemoryPressure {
         }
     }
 
-    var symbolName: String {
+    public var symbolName: String {
         switch self {
         case .normal: "gauge.with.dots.needle.0percent"
         case .moderate: "gauge.with.dots.needle.50percent"
@@ -175,22 +175,22 @@ enum MemoryPressure {
     }
 }
 
-struct FanSnapshot {
+public struct FanSnapshot {
     private static let stoppedRPMThreshold = 100
 
-    let speeds: [Int]
-    let minSpeeds: [Int]
-    let maxSpeeds: [Int]
-    let message: String?
-    let source: String
-    let attemptedKeys: [String]
+    public let speeds: [Int]
+    public let minSpeeds: [Int]
+    public let maxSpeeds: [Int]
+    public let message: String?
+    public let source: String
+    public let attemptedKeys: [String]
 
-    var isMoving: Bool? {
+    public var isMoving: Bool? {
         guard !speeds.isEmpty else { return nil }
         return speeds.contains { $0 > Self.stoppedRPMThreshold }
     }
 
-    var averageRangePercent: Double {
+    public var averageRangePercent: Double {
         guard !speeds.isEmpty else { return 0 }
         let total = speeds.indices.reduce(0) { partial, index in
             partial + rangePercent(at: index)
@@ -198,20 +198,20 @@ struct FanSnapshot {
         return total / Double(speeds.count)
     }
 
-    var averageSpeed: Int {
+    public var averageSpeed: Int {
         guard !speeds.isEmpty else { return 0 }
         return Int((Double(speeds.reduce(0, +)) / Double(speeds.count)).rounded())
     }
 
-    var peakSpeed: Int {
+    public var peakSpeed: Int {
         speeds.max() ?? 0
     }
 
-    var percentTitle: String {
+    public var percentTitle: String {
         "\(Int((averageRangePercent * 100).rounded()))%"
     }
 
-    var rpmText: String {
+    public var rpmText: String {
         guard !speeds.isEmpty else { return "No RPM" }
         if speeds.count == 1, let speed = speeds.first {
             return "\(speed) RPM"
@@ -219,7 +219,7 @@ struct FanSnapshot {
         return speeds.map(String.init).joined(separator: " / ") + " RPM"
     }
 
-    var rangeText: String {
+    public var rangeText: String {
         let validMinimums = minSpeeds.filter { $0 > 0 }
         let validMaximums = maxSpeeds.filter { $0 > 0 }
         guard let minimum = validMinimums.min(), let maximum = validMaximums.max(), maximum > minimum else {
@@ -228,7 +228,7 @@ struct FanSnapshot {
         return "\(minimum)-\(maximum) RPM"
     }
 
-    var statusTitle: String {
+    public var statusTitle: String {
         guard !speeds.isEmpty else { return "Unavailable" }
         guard isMoving == true else { return "Off" }
         switch averageRangePercent {
@@ -241,7 +241,7 @@ struct FanSnapshot {
         }
     }
 
-    var detail: String {
+    public var detail: String {
         if !speeds.isEmpty {
             return speeds.enumerated().map { index, speed in
                 let minimum = minSpeed(at: index).map { ", min \($0)" } ?? ""
@@ -253,17 +253,17 @@ struct FanSnapshot {
         return message ?? "This Apple Silicon Mac does not expose fan RPM sensors."
     }
 
-    func minSpeed(at index: Int) -> Int? {
+    public func minSpeed(at index: Int) -> Int? {
         guard minSpeeds.indices.contains(index), minSpeeds[index] > 0 else { return nil }
         return minSpeeds[index]
     }
 
-    func maxSpeed(at index: Int) -> Int? {
+    public func maxSpeed(at index: Int) -> Int? {
         guard maxSpeeds.indices.contains(index), maxSpeeds[index] > 0 else { return nil }
         return maxSpeeds[index]
     }
 
-    func rangePercent(at index: Int) -> Double {
+    public func rangePercent(at index: Int) -> Double {
         guard speeds.indices.contains(index) else { return 0 }
         let speed = speeds[index]
         if let minimum = minSpeed(at: index), let maximum = maxSpeed(at: index), maximum > minimum {
@@ -275,7 +275,7 @@ struct FanSnapshot {
         return Self.clamped(Double(speed) / 7000)
     }
 
-    func rangePercentTitle(at index: Int) -> String {
+    public func rangePercentTitle(at index: Int) -> String {
         "\(Int((rangePercent(at: index) * 100).rounded()))%"
     }
 
@@ -283,46 +283,46 @@ struct FanSnapshot {
         min(max(value, 0), 1)
     }
 
-    static func unavailable(_ message: String) -> FanSnapshot {
+    public static func unavailable(_ message: String) -> FanSnapshot {
         FanSnapshot(speeds: [], minSpeeds: [], maxSpeeds: [], message: message, source: "AppleSMC", attemptedKeys: [])
     }
 
-    static func unavailable(_ message: String, source: String, attemptedKeys: [String]) -> FanSnapshot {
+    public static func unavailable(_ message: String, source: String, attemptedKeys: [String]) -> FanSnapshot {
         FanSnapshot(speeds: [], minSpeeds: [], maxSpeeds: [], message: message, source: source, attemptedKeys: attemptedKeys)
     }
 }
 
-struct AppUsageSnapshot {
-    let topCPU: [AppUsage]
-    let topMemory: [AppUsage]
-    let topHeat: [AppUsage]
+public struct AppUsageSnapshot {
+    public let topCPU: [AppUsage]
+    public let topMemory: [AppUsage]
+    public let topHeat: [AppUsage]
 
-    static let empty = AppUsageSnapshot(topCPU: [], topMemory: [], topHeat: [])
+    public static let empty = AppUsageSnapshot(topCPU: [], topMemory: [], topHeat: [])
 }
 
-struct AppUsage: Identifiable {
-    let name: String
-    let cpuPercent: Double
-    let memoryBytes: UInt64
-    let heatScore: Double
+public struct AppUsage: Identifiable {
+    public let name: String
+    public let cpuPercent: Double
+    public let memoryBytes: UInt64
+    public let heatScore: Double
 
-    var id: String {
+    public var id: String {
         name
     }
 
-    var cpuDisplay: String {
+    public var cpuDisplay: String {
         if cpuPercent >= 10 {
             return "\(Int(cpuPercent.rounded()))%"
         }
         return "\(cpuPercent.formatted(.number.precision(.fractionLength(1))))%"
     }
 
-    var heatDisplay: String {
+    public var heatDisplay: String {
         "\(Int(heatScore.rounded()))"
     }
 }
 
-final class SystemSampler {
+public final class SystemSampler {
     // Stateful sampler: call only from one serial executor so CPU, process, GPU, and fan baselines stay coherent.
     private var previousCPULoad: host_cpu_load_info?
     private var previousCoreLoads: [host_cpu_load_info] = []
@@ -333,7 +333,9 @@ final class SystemSampler {
     private let fanReader = SMCFanReader()
     private let gpuReader = GPUReader()
 
-    func sample(includeAppUsage: Bool = true) -> SystemSnapshot {
+    public init() {}
+
+    public func sample(includeAppUsage: Bool = true) -> SystemSnapshot {
         let memory = sampleMemory()
         let apps: AppUsageSnapshot
         if includeAppUsage {
@@ -355,12 +357,6 @@ final class SystemSampler {
         )
     }
 
-    private func resetProcessUsageBaseline() {
-        guard previousProcessSampleDate != nil || !previousProcessUsage.isEmpty else { return }
-        previousProcessUsage.removeAll(keepingCapacity: true)
-        previousProcessSampleDate = nil
-    }
-
     private func sampleCPU() -> CPUSnapshot {
         var cpuLoad = host_cpu_load_info()
         var count = mach_msg_type_number_t(MemoryLayout<host_cpu_load_info>.stride / MemoryLayout<integer_t>.stride)
@@ -375,10 +371,10 @@ final class SystemSampler {
         defer { previousCPULoad = cpuLoad }
         guard let previous = previousCPULoad else { return .empty }
 
-        let user = Double(cpuLoad.cpu_ticks.0 - previous.cpu_ticks.0)
-        let system = Double(cpuLoad.cpu_ticks.1 - previous.cpu_ticks.1)
-        let idle = Double(cpuLoad.cpu_ticks.2 - previous.cpu_ticks.2)
-        let nice = Double(cpuLoad.cpu_ticks.3 - previous.cpu_ticks.3)
+        let user = Self.cpuTickDelta(current: cpuLoad.cpu_ticks.0, previous: previous.cpu_ticks.0)
+        let system = Self.cpuTickDelta(current: cpuLoad.cpu_ticks.1, previous: previous.cpu_ticks.1)
+        let idle = Self.cpuTickDelta(current: cpuLoad.cpu_ticks.2, previous: previous.cpu_ticks.2)
+        let nice = Self.cpuTickDelta(current: cpuLoad.cpu_ticks.3, previous: previous.cpu_ticks.3)
         let total = user + system + idle + nice
 
         guard total > 0 else { return .empty }
@@ -428,14 +424,18 @@ final class SystemSampler {
 
         return loads.enumerated().map { index, current in
             let previous = previousCoreLoads[index]
-            let user = Double(current.cpu_ticks.0 - previous.cpu_ticks.0)
-            let system = Double(current.cpu_ticks.1 - previous.cpu_ticks.1)
-            let idle = Double(current.cpu_ticks.2 - previous.cpu_ticks.2)
-            let nice = Double(current.cpu_ticks.3 - previous.cpu_ticks.3)
+            let user = Self.cpuTickDelta(current: current.cpu_ticks.0, previous: previous.cpu_ticks.0)
+            let system = Self.cpuTickDelta(current: current.cpu_ticks.1, previous: previous.cpu_ticks.1)
+            let idle = Self.cpuTickDelta(current: current.cpu_ticks.2, previous: previous.cpu_ticks.2)
+            let nice = Self.cpuTickDelta(current: current.cpu_ticks.3, previous: previous.cpu_ticks.3)
             let total = user + system + idle + nice
             guard total > 0 else { return 0 }
             return max(0, min(1, (total - idle) / total))
         }
+    }
+
+    static func cpuTickDelta(current: UInt32, previous: UInt32) -> Double {
+        Double(current &- previous)
     }
 
     private func sampleMemory() -> MemorySnapshot {
@@ -521,10 +521,7 @@ final class SystemSampler {
 
         previousProcessUsage = currentUsage
         previousProcessSampleDate = now
-        let stalePIDs = processNameCache.keys.filter { !livePIDs.contains($0) }
-        for pid in stalePIDs {
-            processNameCache.removeValue(forKey: pid)
-        }
+        pruneProcessNameCache(livePIDs: livePIDs)
 
         let apps = grouped.map { name, usage in
             let memoryContribution = totalMemory > 0 ? (Double(usage.memory) / Double(totalMemory)) * 100 : 0
@@ -544,6 +541,35 @@ final class SystemSampler {
         )
         latestAppUsage = snapshot
         return snapshot
+    }
+
+    public func refreshProcessUsageBaseline() {
+        let now = Date()
+        var currentUsage: [Int32: ProcessUsageSample] = [:]
+        var livePIDs = Set<Int32>()
+
+        for pid in allProcessIdentifiers() {
+            guard let sample = processUsage(for: pid) else { continue }
+            currentUsage[pid] = sample
+            livePIDs.insert(pid)
+        }
+
+        previousProcessUsage = currentUsage
+        previousProcessSampleDate = now
+        pruneProcessNameCache(livePIDs: livePIDs)
+    }
+
+    private func resetProcessUsageBaseline() {
+        guard previousProcessSampleDate != nil || !previousProcessUsage.isEmpty else { return }
+        previousProcessUsage.removeAll(keepingCapacity: true)
+        previousProcessSampleDate = nil
+    }
+
+    private func pruneProcessNameCache(livePIDs: Set<Int32>) {
+        let stalePIDs = processNameCache.keys.filter { !livePIDs.contains($0) }
+        for pid in stalePIDs {
+            processNameCache.removeValue(forKey: pid)
+        }
     }
 
     private func allProcessIdentifiers() -> [Int32] {
@@ -626,9 +652,9 @@ final class SystemSampler {
         if name == "MenuStat" {
             return "MenuStat"
         }
-        return name
-            .replacingOccurrences(of: ".app", with: "")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.hasSuffix(".app") else { return trimmed }
+        return String(trimmed.dropLast(4))
     }
 }
 
@@ -894,13 +920,13 @@ final class GPUReader {
     }
 }
 
-extension Double {
+public extension Double {
     var percentString: String {
         formatted(.percent.precision(.fractionLength(0)))
     }
 }
 
-extension TimeInterval {
+public extension TimeInterval {
     var uptimeShortString: String {
         let seconds = max(0, Int(rounded(.down)))
         let days = seconds / 86400
@@ -932,7 +958,7 @@ extension TimeInterval {
     }
 }
 
-extension UInt64 {
+public extension UInt64 {
     var formattedBytes: String {
         ByteCountFormatter.string(fromByteCount: Int64(self), countStyle: .memory)
     }

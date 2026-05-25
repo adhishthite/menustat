@@ -1,5 +1,5 @@
 import XCTest
-@testable import MenuStat
+@testable import MenuStatCore
 
 final class GPUReaderTests: XCTestCase {
     func testParsesAGXPerformanceStatistics() {

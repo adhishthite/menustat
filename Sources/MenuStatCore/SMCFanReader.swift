@@ -1,7 +1,7 @@
 import Foundation
 import IOKit
 
-final class SMCFanReader {
+public final class SMCFanReader {
     private let services = ["AppleSMCKeysEndpoint", "AppleSMC"]
     private var cachedConnection: (service: String, connection: io_connect_t)?
     private var cachedUnavailableSnapshot: FanSnapshot?
@@ -10,7 +10,9 @@ final class SMCFanReader {
         closeCachedConnection()
     }
 
-    func readFans() -> FanSnapshot {
+    public init() {}
+
+    public func readFans() -> FanSnapshot {
         #if !arch(arm64)
         return .unavailable("MenuStat fan checks are Apple Silicon only.")
         #else

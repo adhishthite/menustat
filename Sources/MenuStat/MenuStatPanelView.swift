@@ -1,3 +1,4 @@
+import MenuStatCore
 import SwiftUI
 
 // MARK: - Brand palette
@@ -349,9 +350,9 @@ private struct MetricTile: View {
         .background(active ? Brand.surface : Brand.bg)
         .contentShape(Rectangle())
         .onTapGesture(perform: onTap)
-        .onHover { hovering in
-            if hovering { onTap() }
-        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(section.fullName)
+        .accessibilityValue("\(value), \(caption)")
     }
 }
 

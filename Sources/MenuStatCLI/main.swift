@@ -1,0 +1,3 @@
+import MenuStatCLIKit
+
+MenuStatCommand.main()

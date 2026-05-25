@@ -1,21 +1,59 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon?
+._*
+
+# Swift Package Manager
 .build/
 .swiftpm/
+Package.resolved
+
+# Xcode / Apple build artifacts
 DerivedData/
+*.xcworkspace/xcuserdata/
+*.xcodeproj/xcuserdata/
+*.xcuserstate
+*.xcresult
+*.dSYM/
+
+# Local app and release outputs
 MenuStat.app/
 dist/
 
 # Tool caches
 .swiftlint-cache/
-*.xcresult
+.swiftformat.cache
+
+# Website / Node outputs
+website/.next/
+website/node_modules/
+website/out/
+website/.vercel/
+website/.turbo/
+website/.swc/
+website/coverage/
+website/.pnpm-store/
+website/npm-debug.log*
+website/yarn-debug.log*
+website/yarn-error.log*
+website/pnpm-debug.log*
+
+# Environment files
+.env
+.env.*
+!.env.example
+website/.env
+website/.env.*
+!website/.env.example
 
 # Editor
 .vscode/
 .idea/
 *.swp
+*.swo
 
 # Local agent / tool state
 .claude/
 .codex/
-
-# macOS
-.DS_Store

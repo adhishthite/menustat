@@ -15,14 +15,29 @@ APP_BINARY="$APP_MACOS/$APP_NAME"
 INFO_PLIST="$APP_CONTENTS/Info.plist"
 APP_ICON="$ROOT_DIR/Resources/AppIcon.icns"
 CURRENT_YEAR="$(date +%Y)"
+BUILD_UNIVERSAL="${BUILD_UNIVERSAL:-1}"
 
 pkill -x "$APP_NAME" >/dev/null 2>&1 || true
 
-swift build -c release
-BUILD_BINARY="$ROOT_DIR/.build/release/$APP_NAME"
+build_binary() {
+  if [[ "$BUILD_UNIVERSAL" == "1" ]]; then
+    local arm_dir x86_dir
+    arm_dir="$(swift build -c release --triple arm64-apple-macos13.0 --show-bin-path)"
+    x86_dir="$(swift build -c release --triple x86_64-apple-macos13.0 --show-bin-path)"
+
+    echo "Building $APP_NAME for arm64"
+    swift build -c release --triple arm64-apple-macos13.0 --product "$APP_NAME"
+    echo "Building $APP_NAME for x86_64 compatibility alert"
+    swift build -c release --triple x86_64-apple-macos13.0 --product "$APP_NAME"
+    /usr/bin/lipo -create "$arm_dir/$APP_NAME" "$x86_dir/$APP_NAME" -output "$APP_BINARY"
+  else
+    swift build -c release --product "$APP_NAME"
+    cp "$ROOT_DIR/.build/release/$APP_NAME" "$APP_BINARY"
+  fi
+}
 
 mkdir -p "$APP_MACOS" "$APP_RESOURCES"
-cp "$BUILD_BINARY" "$APP_BINARY"
+build_binary
 chmod +x "$APP_BINARY"
 cp "$APP_ICON" "$APP_RESOURCES/AppIcon.icns"
 
@@ -50,6 +65,7 @@ cat >"$INFO_PLIST" <<PLIST
   <key>LSArchitecturePriority</key>
   <array>
     <string>arm64</string>
+    <string>x86_64</string>
   </array>
   <key>LSMinimumSystemVersion</key>
   <string>$MIN_SYSTEM_VERSION</string>

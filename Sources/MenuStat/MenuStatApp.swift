@@ -1,5 +1,6 @@
 import AppKit
 import Combine
+import MenuStatCore
 import OSLog
 import ServiceManagement
 import SwiftUI
@@ -22,6 +23,10 @@ struct MenuStatApp {
             exit(0)
         }
 
+        guard HardwareSupport.isAppleSiliconMac else {
+            showUnsupportedAlertAndQuit()
+        }
+
         let app = NSApplication.shared
         let delegate = MenuStatAppDelegate()
         retainedAppDelegate = delegate
@@ -29,6 +34,22 @@ struct MenuStatApp {
         app.setActivationPolicy(.accessory)
         app.run()
     }
+}
+
+private func showUnsupportedAlertAndQuit() -> Never {
+    let app = NSApplication.shared
+    app.setActivationPolicy(.regular)
+    app.activate(ignoringOtherApps: true)
+
+    let alert = NSAlert()
+    alert.messageText = HardwareSupport.unsupportedTitle
+    alert.informativeText = HardwareSupport.unsupportedMessage
+    alert.alertStyle = .critical
+    alert.addButton(withTitle: "Quit")
+    alert.runModal()
+
+    app.terminate(nil)
+    exit(1)
 }
 
 final class MenuStatAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
@@ -49,6 +70,7 @@ final class MenuStatAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
     private var isPanelVisible = false
     private var isSampling = false
     private var pendingSampleIncludesAppUsage = false
+    private var pendingSampleNeedsFreshAppUsage = false
     private let panelSize = NSSize(width: 442, height: 620)
     private let panelGap: CGFloat = -8
 
@@ -74,7 +96,7 @@ final class MenuStatAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
 
         let timer = Timer(timeInterval: 5, repeats: true) { [weak self] _ in
             guard let self else { return }
-            refreshSnapshot(includeAppUsage: isPanelVisible)
+            refreshSnapshot(includeAppUsage: isPanelVisible, freshAppUsage: false)
         }
         refreshTimer = timer
         RunLoop.main.add(timer, forMode: .common)
@@ -89,7 +111,7 @@ final class MenuStatAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
                 }
             }
         }
-        refreshSnapshot(includeAppUsage: false)
+        refreshSnapshot(includeAppUsage: false, freshAppUsage: false)
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -165,7 +187,7 @@ final class MenuStatAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
         panel.setFrame(frame, display: true)
         panel.makeKeyAndOrderFront(nil)
         panel.orderFrontRegardless()
-        refreshSnapshotSoon(includeAppUsage: true)
+        refreshSnapshotSoon(includeAppUsage: true, freshAppUsage: true)
     }
 
     private func hidePanel() {
@@ -177,19 +199,20 @@ final class MenuStatAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
     private func showStatusMenu() {
         guard let menu = statusMenu, let button = statusItem?.button else { return }
         menu.popUp(positioning: nil, at: NSPoint(x: 0, y: button.bounds.maxY + 2), in: button)
-        refreshSnapshotSoon(includeAppUsage: true)
+        refreshSnapshotSoon(includeAppUsage: true, freshAppUsage: true)
     }
 
-    private func refreshSnapshotSoon(includeAppUsage: Bool) {
+    private func refreshSnapshotSoon(includeAppUsage: Bool, freshAppUsage: Bool = false) {
         DispatchQueue.main.async { [weak self] in
-            self?.refreshSnapshot(includeAppUsage: includeAppUsage)
+            self?.refreshSnapshot(includeAppUsage: includeAppUsage, freshAppUsage: freshAppUsage)
         }
     }
 
-    private func refreshSnapshot(includeAppUsage: Bool) {
+    private func refreshSnapshot(includeAppUsage: Bool, freshAppUsage: Bool) {
         // Keep one sampler call in flight. Hidden-panel ticks can drop; app-usage requests coalesce into one follow-up.
         if isSampling {
             pendingSampleIncludesAppUsage = pendingSampleIncludesAppUsage || includeAppUsage
+            pendingSampleNeedsFreshAppUsage = pendingSampleNeedsFreshAppUsage || freshAppUsage
             return
         }
 
@@ -197,10 +220,18 @@ final class MenuStatAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
         samplingQueue.async { [weak self] in
             guard let self else { return }
             let startedAt = DispatchTime.now().uptimeNanoseconds
+            if freshAppUsage {
+                sampler.refreshProcessUsageBaseline()
+                Thread.sleep(forTimeInterval: 0.25)
+            }
             let nextSnapshot = sampler.sample(includeAppUsage: includeAppUsage)
             let durationMs = Double(DispatchTime.now().uptimeNanoseconds - startedAt) / 1_000_000
             Self.samplingLogger.debug(
-                "sample includeAppUsage=\(includeAppUsage, privacy: .public) durationMs=\(durationMs, privacy: .public)"
+                """
+                sample includeAppUsage=\(includeAppUsage, privacy: .public) \
+                freshAppUsage=\(freshAppUsage, privacy: .public) \
+                durationMs=\(durationMs, privacy: .public)
+                """
             )
 
             DispatchQueue.main.async { [weak self] in
@@ -213,9 +244,11 @@ final class MenuStatAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
                 }
 
                 let shouldRunPendingSample = pendingSampleIncludesAppUsage
+                let shouldRunFreshAppUsage = pendingSampleNeedsFreshAppUsage
                 pendingSampleIncludesAppUsage = false
+                pendingSampleNeedsFreshAppUsage = false
                 if shouldRunPendingSample {
-                    refreshSnapshot(includeAppUsage: true)
+                    refreshSnapshot(includeAppUsage: true, freshAppUsage: shouldRunFreshAppUsage)
                 }
             }
         }
