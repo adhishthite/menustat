@@ -15,6 +15,13 @@ APP_BINARY="$APP_MACOS/$APP_NAME"
 INFO_PLIST="$APP_CONTENTS/Info.plist"
 APP_ICON="$ROOT_DIR/Resources/AppIcon.icns"
 CURRENT_YEAR="$(date +%Y)"
+if [[ -z "${MARKETING_VERSION:-}" ]]; then
+  MARKETING_VERSION="$(git -C "$ROOT_DIR" describe --tags --abbrev=0 2>/dev/null | sed 's/^v//' || true)"
+fi
+MARKETING_VERSION="${MARKETING_VERSION:-0.1.0}"
+if [[ -z "${BUILD_NUMBER:-}" ]]; then
+  BUILD_NUMBER="$(git -C "$ROOT_DIR" rev-list --count HEAD 2>/dev/null || echo 1)"
+fi
 BUILD_UNIVERSAL="${BUILD_UNIVERSAL:-1}"
 
 pkill -x "$APP_NAME" >/dev/null 2>&1 || true
@@ -57,9 +64,9 @@ cat >"$INFO_PLIST" <<PLIST
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>CFBundleShortVersionString</key>
-  <string>0.1</string>
+  <string>$MARKETING_VERSION</string>
   <key>CFBundleVersion</key>
-  <string>1</string>
+  <string>$BUILD_NUMBER</string>
   <key>LSApplicationCategoryType</key>
   <string>public.app-category.utilities</string>
   <key>LSArchitecturePriority</key>

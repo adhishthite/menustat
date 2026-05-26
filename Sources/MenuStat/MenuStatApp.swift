@@ -154,7 +154,8 @@ final class MenuStatAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
 
         let alert = NSAlert()
         alert.messageText = "MenuStat"
-        alert.informativeText = "\(copyrightText)\n\nApple Silicon system monitor for CPU, memory, pressure, fans, and top-consuming apps."
+        let description = "Apple Silicon system monitor for CPU, memory, pressure, fans, and top-consuming apps."
+        alert.informativeText = "\(versionDisplay)\n\(copyrightText)\n\n\(description)"
         alert.alertStyle = .informational
         alert.addButton(withTitle: "OK")
         alert.runModal()
@@ -280,6 +281,22 @@ final class MenuStatAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
 
     private var copyrightText: String {
         "Copyright © \(Self.currentYear) Adhish Thite"
+    }
+
+    private var versionDisplay: String {
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
+        let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String
+
+        switch (version?.isEmpty == false ? version : nil, build?.isEmpty == false ? build : nil) {
+        case let (version?, build?):
+            return "Version \(version) (\(build))"
+        case let (version?, nil):
+            return "Version \(version)"
+        case let (nil, build?):
+            return "Build \(build)"
+        case (nil, nil):
+            return "Version unavailable"
+        }
     }
 
     private func isLaunchAtLoginEnabled(_ status: SMAppService.Status = SMAppService.mainApp.status) -> Bool {
@@ -420,6 +437,10 @@ final class MenuStatAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
         let title = NSMenuItem(title: "MenuStat", action: nil, keyEquivalent: "")
         title.isEnabled = false
         menu.addItem(title)
+
+        let versionItem = NSMenuItem(title: versionDisplay, action: nil, keyEquivalent: "")
+        versionItem.isEnabled = false
+        menu.addItem(versionItem)
 
         let summary = NSMenuItem(
             title: "\(snapshot.menuTitle)  Fans \(snapshot.fans.percentTitle) \(snapshot.fans.statusTitle)",
