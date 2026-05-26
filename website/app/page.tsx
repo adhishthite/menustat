@@ -3,7 +3,7 @@ import LiveTelemetry from "./LiveTelemetry";
 import ThemeToggle from "./ThemeToggle";
 
 const downloadUrl =
-  "https://github.com/adhishthite/menustat/releases/download/v0.3.1/MenuStat-0.3.1.dmg";
+  "https://github.com/adhishthite/menustat/releases/latest/download/MenuStat.dmg";
 const repoUrl = "https://github.com/adhishthite/menustat";
 const version = "0.3.1";
 

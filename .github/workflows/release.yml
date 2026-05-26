@@ -153,11 +153,18 @@ jobs:
           spctl --assess --type execute --verbose dist/work/MenuStat.app
           codesign --verify --strict --verbose=2 dist/work/cli/menustat
           spctl --assess --type open --context context:primary-signature --verbose "dist/MenuStat-$VERSION.dmg"
+          cp "dist/MenuStat-$VERSION.dmg" "dist/MenuStat.dmg"
+          cp "dist/MenuStat-$VERSION.zip" "dist/MenuStat.zip"
+          cp "dist/MenuStatCLI-$VERSION.zip" "dist/MenuStatCLI.zip"
           shasum -a 256 \
             "dist/MenuStat-$VERSION.dmg" \
             "dist/MenuStat-$VERSION.zip" \
-            "dist/MenuStatCLI-$VERSION.zip" |
+            "dist/MenuStatCLI-$VERSION.zip" \
+            "dist/MenuStat.dmg" \
+            "dist/MenuStat.zip" \
+            "dist/MenuStatCLI.zip" |
             tee "dist/MenuStat-$VERSION-checksums.txt"
+          cp "dist/MenuStat-$VERSION-checksums.txt" "dist/MenuStat-checksums.txt"
 
       - name: Publish GitHub Release
         env:
@@ -188,6 +195,10 @@ jobs:
               "dist/MenuStat-$VERSION.zip" \
               "dist/MenuStatCLI-$VERSION.zip" \
               "dist/MenuStat-$VERSION-checksums.txt" \
+              "dist/MenuStat.dmg" \
+              "dist/MenuStat.zip" \
+              "dist/MenuStatCLI.zip" \
+              "dist/MenuStat-checksums.txt" \
               --clobber
             gh release edit "$tag" --title "MenuStat $VERSION" --notes-file "$notes" --latest
           else
@@ -196,6 +207,10 @@ jobs:
               "dist/MenuStat-$VERSION.zip" \
               "dist/MenuStatCLI-$VERSION.zip" \
               "dist/MenuStat-$VERSION-checksums.txt" \
+              "dist/MenuStat.dmg" \
+              "dist/MenuStat.zip" \
+              "dist/MenuStatCLI.zip" \
+              "dist/MenuStat-checksums.txt" \
               --title "MenuStat $VERSION" \
               --notes-file "$notes" \
               --latest

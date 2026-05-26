@@ -36,7 +36,7 @@ A lightweight macOS menu-bar system monitor for Apple Silicon — CPU, unified m
 > **Apple Silicon required:** MenuStat is for Apple Silicon Macs (M1 or later). On Intel Macs, the app shows an unsupported-hardware alert and quits.
 
 1. Download the latest Apple Silicon release:
-   [MenuStat-0.3.1.dmg](https://github.com/adhishthite/menustat/releases/download/v0.3.1/MenuStat-0.3.1.dmg)
+   [MenuStat.dmg](https://github.com/adhishthite/menustat/releases/latest/download/MenuStat.dmg)
 2. Open the DMG.
 3. Drag `MenuStat.app` into `Applications`.
 4. Open `MenuStat.app`.
@@ -51,10 +51,10 @@ MenuStat is Developer ID signed and notarized. If macOS asks for confirmation th
 
 ### CLI install
 
-The release also includes `MenuStatCLI-0.3.1.zip` for terminal users:
+The release also includes `MenuStatCLI.zip` for terminal users:
 
 ```bash
-unzip MenuStatCLI-0.3.1.zip
+unzip MenuStatCLI.zip
 sudo install -m 755 menustat /usr/local/bin/menustat
 menustat
 ```

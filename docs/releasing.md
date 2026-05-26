@@ -9,6 +9,15 @@ The workflow builds, signs, notarizes, staples, verifies, and uploads:
 - `MenuStat-X.Y.Z.zip`
 - `MenuStatCLI-X.Y.Z.zip`
 - `MenuStat-X.Y.Z-checksums.txt`
+- `MenuStat.dmg`
+- `MenuStat.zip`
+- `MenuStatCLI.zip`
+- `MenuStat-checksums.txt`
+
+The versioned artifacts provide immutable release history. The stable artifacts
+are overwritten on each release so public links can always download the latest
+build via `releases/latest/download/MenuStat.dmg` and
+`releases/latest/download/MenuStatCLI.zip`.
 
 MenuStat is supported only on Apple Silicon Macs running macOS 13 or later. The
 release app includes an `x86_64` compatibility slice only so Intel Macs can show
