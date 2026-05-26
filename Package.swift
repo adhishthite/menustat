@@ -9,7 +9,7 @@ let package = Package(
     ],
     products: [
         .library(name: "MenuStatCore", targets: ["MenuStatCore"]),
-        .executable(name: "MenuStat", targets: ["MenuStat"]),
+        .executable(name: "MenuStat", targets: ["MenuStatApp"]),
         .executable(name: "menustat", targets: ["MenuStatCLI"])
     ],
     dependencies: [
@@ -24,8 +24,9 @@ let package = Package(
             ]
         ),
         .executableTarget(
-            name: "MenuStat",
+            name: "MenuStatApp",
             dependencies: ["MenuStatCore"],
+            path: "Sources/MenuStat",
             linkerSettings: [
                 .linkedFramework("AppKit"),
                 .linkedFramework("ServiceManagement")
@@ -46,7 +47,7 @@ let package = Package(
         .testTarget(
             name: "MenuStatTests",
             dependencies: [
-                "MenuStat",
+                "MenuStatApp",
                 "MenuStatCLIKit",
                 "MenuStatCore"
             ]

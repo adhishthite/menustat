@@ -157,23 +157,32 @@ README
 
 build_binaries() {
   if [[ "$BUILD_UNIVERSAL" == "1" ]]; then
-    local arm_dir x86_dir
+    local arm_dir x86_dir app_arm app_x86 cli_arm cli_x86
+    app_arm="$WORK_DIR/$APP_EXECUTABLE_NAME-arm64"
+    app_x86="$WORK_DIR/$APP_EXECUTABLE_NAME-x86_64"
+    cli_arm="$WORK_DIR/$CLI_NAME-arm64"
+    cli_x86="$WORK_DIR/$CLI_NAME-x86_64"
+
     arm_dir="$(swift build -c release --triple arm64-apple-macos13.0 --show-bin-path)"
     x86_dir="$(swift build -c release --triple x86_64-apple-macos13.0 --show-bin-path)"
 
     echo "Building $APP_NAME $MARKETING_VERSION ($BUILD_NUMBER) for arm64"
     swift build -c release --triple arm64-apple-macos13.0 --product "$APP_NAME"
+    cp "$arm_dir/$APP_NAME" "$app_arm"
     swift build -c release --triple arm64-apple-macos13.0 --product "$CLI_NAME"
+    cp "$arm_dir/$CLI_NAME" "$cli_arm"
     echo "Building $APP_NAME $MARKETING_VERSION ($BUILD_NUMBER) for x86_64 compatibility alert"
     swift build -c release --triple x86_64-apple-macos13.0 --product "$APP_NAME"
+    cp "$x86_dir/$APP_NAME" "$app_x86"
     swift build -c release --triple x86_64-apple-macos13.0 --product "$CLI_NAME"
-    /usr/bin/lipo -create "$arm_dir/$APP_NAME" "$x86_dir/$APP_NAME" -output "$APP_BINARY"
-    /usr/bin/lipo -create "$arm_dir/$CLI_NAME" "$x86_dir/$CLI_NAME" -output "$CLI_BINARY"
+    cp "$x86_dir/$CLI_NAME" "$cli_x86"
+    /usr/bin/lipo -create "$app_arm" "$app_x86" -output "$APP_BINARY"
+    /usr/bin/lipo -create "$cli_arm" "$cli_x86" -output "$CLI_BINARY"
   else
     echo "Building $APP_NAME $MARKETING_VERSION ($BUILD_NUMBER)"
     swift build -c release --product "$APP_NAME"
-    swift build -c release --product "$CLI_NAME"
     cp "$ROOT_DIR/.build/release/$APP_NAME" "$APP_BINARY"
+    swift build -c release --product "$CLI_NAME"
     cp "$ROOT_DIR/.build/release/$CLI_NAME" "$CLI_BINARY"
   fi
 
