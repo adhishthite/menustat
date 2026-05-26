@@ -3,9 +3,9 @@ import LiveTelemetry from "./LiveTelemetry";
 import ThemeToggle from "./ThemeToggle";
 
 const downloadUrl =
-  "https://github.com/adhishthite/menustat/releases/download/v0.3.0/MenuStat-0.3.0.dmg";
+  "https://github.com/adhishthite/menustat/releases/download/v0.3.1/MenuStat-0.3.1.dmg";
 const repoUrl = "https://github.com/adhishthite/menustat";
-const version = "0.3.0";
+const version = "0.3.1";
 
 // Spread onto any anchor pointing off-site so it opens in a new tab safely.
 const ext = { target: "_blank", rel: "noopener noreferrer" } as const;
