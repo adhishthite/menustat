@@ -21,6 +21,13 @@ icon, or launch-at-login distribution work.
   checksums, and stable latest-download aliases.
 - CI/CD release workflow: `.github/workflows/release.yml`
 - CI/CD setup docs: `docs/releasing.md`
+- Repository visibility: public.
+- CODEOWNERS: `.github/CODEOWNERS` owns all paths with `@adhishthite`.
+- `main` is protected: PR required, CODEOWNER review required, one approval
+  required, `Format / Lint / Build / Test` required, branch must be up to date,
+  stale reviews are dismissed, conversations must be resolved, linear history is
+  required, force-pushes and branch deletion are blocked, admins are not
+  enforced.
 
 ## Release Checklist
 
@@ -56,11 +63,23 @@ icon, or launch-at-login distribution work.
    shasum -a 256 dist/MenuStat-X.Y.Z.dmg dist/MenuStat-X.Y.Z.zip
    ```
 
-6. Commit and push code/docs changes:
+6. Commit and open a PR for code/docs changes:
    ```bash
+   branch="codex/release-X.Y.Z"
+   git checkout -b "$branch"
    git add <changed files>
    git commit -m "<release-related message>"
-   git push origin main
+   git push -u origin "$branch"
+   gh pr create --base main --head "$branch" \
+     --title "<release-related title>" \
+     --body "<release summary and validation>"
+   ```
+
+   Merge the PR after the required `Format / Lint / Build / Test` check and
+   CODEOWNER review pass. Then sync local `main` before tagging:
+   ```bash
+   git checkout main
+   git pull --ff-only origin main
    ```
 
 7. Create GitHub Release:
@@ -103,6 +122,39 @@ icon, or launch-at-login distribution work.
    curl -L -s https://menustat.adhishthite.vercel.app |
      rg -o 'releases/latest/download/MenuStat[^\"]+|vX.Y.Z'
    ```
+
+10. Clean up merged release branches when appropriate:
+    ```bash
+    git branch -d codex/release-X.Y.Z
+    git push origin --delete codex/release-X.Y.Z
+    ```
+
+## Repository Governance
+
+Do not assume direct pushes to `main` are acceptable. `main` is protected and
+normal code/docs changes should land through a PR. A release tag may still be
+pushed from the reviewed `main` commit to trigger `.github/workflows/release.yml`.
+
+Before changing policies, inspect current state:
+
+```bash
+gh repo view adhishthite/menustat --json nameWithOwner,visibility,isPrivate,defaultBranchRef
+cat .github/CODEOWNERS
+gh api repos/adhishthite/menustat/branches/main/protection \
+  --jq '{required_status_checks, required_pull_request_reviews, enforce_admins, required_linear_history, allow_force_pushes, allow_deletions, required_conversation_resolution}'
+```
+
+Current intended protection:
+
+- Require pull requests before merging.
+- Require `Format / Lint / Build / Test`.
+- Require branch to be up to date before merge.
+- Require one approval and CODEOWNER review.
+- Dismiss stale reviews.
+- Require conversation resolution.
+- Require linear history.
+- Disable force-pushes and branch deletion.
+- Leave admin enforcement off for owner recovery.
 
 ## Stable Download URLs
 
