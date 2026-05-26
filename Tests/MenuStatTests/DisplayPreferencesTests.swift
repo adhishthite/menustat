@@ -1,5 +1,5 @@
 import XCTest
-@testable import MenuStat
+@testable import MenuStatApp
 
 final class DisplayPreferencesTests: XCTestCase {
     private func makeDefaults() -> UserDefaults {
