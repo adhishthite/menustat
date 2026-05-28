@@ -4,6 +4,8 @@ A lightweight macOS menu-bar system monitor for Apple Silicon — CPU, unified m
 
 > **Status:** experimental. Built for Apple Silicon (M1+) running macOS 13 Ventura or later. Intel Macs are not supported.
 
+Website: https://menustat.adhishthite.vercel.app/
+
 ---
 
 ## Features
