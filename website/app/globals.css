@@ -444,12 +444,12 @@ code {
 .panelFrame {
   position: relative;
   z-index: 1;
-  width: min(100%, 420px);
-  border-radius: 18px;
+  width: min(100%, 520px);
+  border-radius: 8px;
   border: 1px solid var(--line-2);
   background: #050608;
-  padding: 14px 12px 12px;
   box-shadow: var(--shadow);
+  overflow: hidden;
   transition: transform 0.4s ease;
 }
 
@@ -457,26 +457,8 @@ code {
   transform: translateY(-6px) rotate(-0.4deg);
 }
 
-.panelChrome {
-  display: flex;
-  gap: 7px;
-  padding: 2px 4px 12px;
-}
-
-.panelChrome span {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.16);
-}
-
-.panelChrome span:nth-child(1) { background: #ff5f57; }
-.panelChrome span:nth-child(2) { background: #febc2e; }
-.panelChrome span:nth-child(3) { background: #28c840; }
-
 .panelFrame img {
   width: 100%;
-  border-radius: 8px;
 }
 
 .floatChip {
@@ -846,6 +828,10 @@ code {
   }
   .product {
     order: -1;
+    overflow: clip;
+  }
+  .floatChip {
+    display: none;
   }
   .metricGrid,
   .how {
@@ -907,9 +893,6 @@ code {
   }
   .actions .button {
     width: 100%;
-  }
-  .floatChip {
-    display: none;
   }
   .metricGrid,
   .how,

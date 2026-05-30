@@ -50,6 +50,7 @@ final class MenuStatPanelRenderingTests: XCTestCase {
 
         XCTAssertGreaterThan(meaningfulPixels(in: bitmap, xRange: 0..<bitmap.pixelsWide, yRange: 0..<bitmap.pixelsHigh), 2000)
         XCTAssertGreaterThan(colorVariety(in: bitmap), 12)
+        try writeWebsiteScreenshotIfRequested(bitmap)
     }
 
     private func makeDefaults() -> UserDefaults {
@@ -114,5 +115,18 @@ final class MenuStatPanelRenderingTests: XCTestCase {
             }
         }
         return buckets.count
+    }
+
+    private func writeWebsiteScreenshotIfRequested(_ bitmap: NSBitmapImageRep) throws {
+        guard ProcessInfo.processInfo.environment["MENUSTAT_WRITE_PANEL_SCREENSHOT"] == "1" else {
+            return
+        }
+        let data = try XCTUnwrap(bitmap.representation(using: .png, properties: [:]))
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        try data.write(to: root.appendingPathComponent("website/public/menustat-panel.png"))
+        try data.write(to: root.appendingPathComponent("docs/screenshots/menustat-panel.png"))
     }
 }
