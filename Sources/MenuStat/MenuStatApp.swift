@@ -80,6 +80,7 @@ final class MenuStatAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
     private var globalEventMonitor: Any?
     private var preferencesCancellable: AnyCancellable?
     private var isPanelVisible = false
+    private var shouldClosePanelFromStatusItemClick = false
     private var isSampling = false
     private var pendingSampleIncludesAppUsage = false
     private var pendingSampleNeedsFreshAppUsage = false
@@ -138,15 +139,18 @@ final class MenuStatAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
     @objc
     func statusItemClicked(_ sender: Any?) {
         if NSApp.currentEvent?.type == .rightMouseUp {
+            shouldClosePanelFromStatusItemClick = false
             showStatusMenu()
             return
         }
 
-        if panel?.isVisible == true {
+        if shouldClosePanelFromStatusItemClick || panel?.isVisible == true {
+            shouldClosePanelFromStatusItemClick = false
             hidePanel()
             return
         }
 
+        shouldClosePanelFromStatusItemClick = false
         showPanel()
     }
 
@@ -466,12 +470,12 @@ final class MenuStatAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
 
     private func installPanelEventMonitors() {
         localEventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] event in
-            self?.closePanelIfClickIsOutside()
+            self?.closePanelIfClickIsOutside(event)
             return event
         }
 
-        globalEventMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
-            self?.closePanelIfClickIsOutside()
+        globalEventMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] event in
+            self?.closePanelIfClickIsOutside(event)
         }
     }
 
@@ -486,11 +490,15 @@ final class MenuStatAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
         globalEventMonitor = nil
     }
 
-    private func closePanelIfClickIsOutside() {
+    private func closePanelIfClickIsOutside(_ event: NSEvent) {
         guard panel?.isVisible == true else { return }
         let point = NSEvent.mouseLocation
         if panel?.frame.contains(point) == true { return }
-        if statusButtonFrameOnScreen()?.insetBy(dx: -6, dy: -6).contains(point) == true { return }
+        if statusButtonFrameOnScreen()?.insetBy(dx: -6, dy: -6).contains(point) == true {
+            shouldClosePanelFromStatusItemClick = event.type == .leftMouseDown
+            return
+        }
+        shouldClosePanelFromStatusItemClick = false
         hidePanel()
     }
 }

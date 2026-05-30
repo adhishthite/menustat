@@ -41,6 +41,12 @@ icon, or launch-at-login distribution work.
    - README and website install links should use stable latest assets:
      `https://github.com/adhishthite/menustat/releases/latest/download/MenuStat.dmg`
      and `https://github.com/adhishthite/menustat/releases/latest/download/MenuStatCLI.zip`.
+   - Always review `website/app/page.tsx` for copy changes whenever the release
+     includes user-facing behavior, version changes, screenshots, install
+     instructions, supported hardware or macOS requirements, or visible app UI.
+     Update the website copy in the same release PR when it would otherwise
+     describe stale product behavior. If no website copy needs to change, say so
+     explicitly in the PR/release notes.
    - Website display text may still show the version being released.
    - If packaging behavior changes, update `script/package_release.sh`.
    - If GitHub Actions upload behavior changes, update `.github/workflows/release.yml`.
