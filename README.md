@@ -16,7 +16,7 @@ Website: https://menustat.adhishthite.vercel.app/
 - **Fans** — real-time RPM per fan, normalized range percentage, status bucket (Quiet / Cooling / High) sourced from `AppleSMCKeysEndpoint`. See [fan reading caveats](#fan-reading-caveats).
 - **Menu-bar resident** — runs as an `LSUIElement` (no Dock icon, no window).
 - **Companion CLI** — `menustat` provides a live terminal dashboard plus `snapshot`, `top`, and `fans` commands with JSON output for scripts.
-- **Refreshes every 5 s** — headline metrics stay current; heavier top-app sampling runs when details are visible.
+- **Configurable refresh rate** — choose 1 s for live build/debug sessions, 5 s for balanced monitoring, or 30 s for quiet menu-bar residency; heavier top-app sampling runs when details are visible.
 
 ## Screenshots
 
@@ -170,7 +170,7 @@ MenuStat is a SwiftPM package with a shared telemetry core and two executables:
 │      ├── MenuStatStatusPanel  (NSPanel, custom)                │
 │      │   └── NSHostingController<MenuStatPanelRoot>            │
 │      │       └── MenuStatPanelView  (SwiftUI)                  │
-│      └── refreshTimer  →  serial sampling queue  every 5 s     │
+│      └── refreshTimer  →  serial sampling queue  1/5/30 s      │
 ├────────────────────────────────────────────────────────────────┤
 │  menustat                                                       │
 │  └── live dashboard / snapshot / top / fans commands            │
@@ -180,7 +180,7 @@ MenuStat is a SwiftPM package with a shared telemetry core and two executables:
 **Design notes:**
 
 - The UI and CLI never touch IOKit directly — they consume immutable `SystemSnapshot` value types produced by `SystemSampler`. This is why the unit tests can cover the entire `FanSnapshot` / `MemorySnapshot` / `CPUSnapshot` surface without mocking syscalls.
-- Fans, CPU, and memory are sampled on the same 5 s cadence to keep snapshots internally consistent.
+- Fans, CPU, and memory are sampled on the selected refresh cadence to keep snapshots internally consistent.
 - Sampling runs on a serial utility queue. The main thread schedules work, publishes completed snapshots, and skips overlapping ticks; if the panel opens during a hidden-panel sample, a visible app-usage sample is queued next.
 - The CLI warms up sampling before `snapshot` and `top` so delta-based CPU and process readings are useful; `--instant` skips that warm-up for scripts that need the fastest possible response.
 - `GPUReader` caches the AGX service after discovery and uses singular IORegistry property reads for `PerformanceStatistics` and static GPU fields, falling back to full properties only when needed. `SMCFanReader` reuses working AppleSMC connections and caches confirmed fanless results so fanless Macs do not keep probing every tick.
@@ -301,7 +301,7 @@ SwiftPM artifacts are cached on `Package.resolved` + `Package.swift` hashes. Con
 ## Roadmap
 
 - [ ] Inject `FanReader` and `Sampler` protocols so end-to-end sampling can be unit-tested with fakes.
-- [ ] Persist user preferences (refresh interval, which sections to show, menu-bar title format).
+- [ ] Add a dedicated settings window for less-common preferences.
 - [x] Optional notarized & signed distribution via a Developer ID certificate.
 - [ ] Battery / thermal-state section.
 - [ ] Launch-at-login via `SMAppService`.

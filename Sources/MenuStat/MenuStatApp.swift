@@ -7,6 +7,18 @@ import SwiftUI
 
 private var retainedAppDelegate: MenuStatAppDelegate?
 
+enum PanelLayout {
+    static let panelSize = NSSize(width: 720, height: 820)
+    static let outerPadding: CGFloat = 6
+
+    static var contentSize: CGSize {
+        CGSize(
+            width: panelSize.width - outerPadding * 2,
+            height: panelSize.height - outerPadding * 2
+        )
+    }
+}
+
 @main
 struct MenuStatApp {
     static func main() {
@@ -71,7 +83,6 @@ final class MenuStatAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
     private var isSampling = false
     private var pendingSampleIncludesAppUsage = false
     private var pendingSampleNeedsFreshAppUsage = false
-    private let panelSize = NSSize(width: 442, height: 620)
     private let panelGap: CGFloat = -8
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -80,7 +91,7 @@ final class MenuStatAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         item.isVisible = true
         item.button?.title = "▍MS"
-        item.button?.font = NSFont.monospacedSystemFont(ofSize: 11, weight: .bold)
+        item.button?.font = NSFont.monospacedSystemFont(ofSize: 13, weight: .bold)
         item.button?.isEnabled = true
         item.button?.toolTip = "MenuStat"
         item.button?.target = self
@@ -94,17 +105,13 @@ final class MenuStatAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
         statusItem = item
         statusMenu = menu
 
-        let timer = Timer(timeInterval: 5, repeats: true) { [weak self] _ in
-            guard let self else { return }
-            refreshSnapshot(includeAppUsage: isPanelVisible, freshAppUsage: false)
-        }
-        refreshTimer = timer
-        RunLoop.main.add(timer, forMode: .common)
+        scheduleRefreshTimer()
 
         setupPanel()
         installPanelEventMonitors()
         preferencesCancellable = displayPreferences.objectWillChange.sink { [weak self] _ in
             DispatchQueue.main.async {
+                self?.scheduleRefreshTimer()
                 self?.refreshStatusItem()
                 if self?.isPanelVisible == true {
                     self?.refreshPanel()
@@ -176,6 +183,46 @@ final class MenuStatAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
     }
 
     @objc
+    func setRefreshInterval(_ sender: NSMenuItem) {
+        guard let rawValue = (sender.representedObject as? NSNumber)?.doubleValue,
+              let interval = RefreshInterval(rawValue: rawValue)
+        else { return }
+        displayPreferences.refreshInterval = interval
+        scheduleRefreshTimer()
+        rebuildStatusMenu()
+    }
+
+    @objc
+    func setTopAppRows(_ sender: NSMenuItem) {
+        guard let rawValue = (sender.representedObject as? NSNumber)?.intValue,
+              let rows = TopAppRowCount(rawValue: rawValue)
+        else { return }
+        displayPreferences.topAppRows = rows
+        refreshPanel()
+        rebuildStatusMenu()
+    }
+
+    @objc
+    func setPrimaryMetric(_ sender: NSMenuItem) {
+        guard let rawValue = sender.representedObject as? String,
+              let metric = MetricKind(rawValue: rawValue)
+        else { return }
+        displayPreferences.primaryMetric = metric
+        refreshStatusItem()
+        rebuildStatusMenu()
+    }
+
+    @objc
+    func toggleVisibleSection(_ sender: NSMenuItem) {
+        guard let rawValue = sender.representedObject as? String,
+              let metric = MetricKind(rawValue: rawValue)
+        else { return }
+        displayPreferences.setVisible(!displayPreferences.isVisible(metric), for: metric)
+        refreshPanel()
+        rebuildStatusMenu()
+    }
+
+    @objc
     func quitMenuStat(_ sender: Any?) {
         NSApp.terminate(nil)
     }
@@ -207,6 +254,21 @@ final class MenuStatAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
         DispatchQueue.main.async { [weak self] in
             self?.refreshSnapshot(includeAppUsage: includeAppUsage, freshAppUsage: freshAppUsage)
         }
+    }
+
+    private func scheduleRefreshTimer() {
+        let interval = displayPreferences.refreshInterval.rawValue
+        if refreshTimer?.timeInterval == interval {
+            return
+        }
+
+        refreshTimer?.invalidate()
+        let timer = Timer(timeInterval: interval, repeats: true) { [weak self] _ in
+            guard let self else { return }
+            refreshSnapshot(includeAppUsage: isPanelVisible, freshAppUsage: false)
+        }
+        refreshTimer = timer
+        RunLoop.main.add(timer, forMode: .common)
     }
 
     private func refreshSnapshot(includeAppUsage: Bool, freshAppUsage: Bool) {
@@ -336,14 +398,15 @@ final class MenuStatAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
             rootView: MenuStatPanelRoot(
                 snapshot: snapshot,
                 preferences: displayPreferences,
-                height: panelSize.height,
+                width: PanelLayout.panelSize.width,
+                height: PanelLayout.panelSize.height,
                 isVisible: isPanelVisible
             )
         )
-        hosting.view.frame = NSRect(origin: .zero, size: panelSize)
+        hosting.view.frame = NSRect(origin: .zero, size: PanelLayout.panelSize)
 
         let panel = MenuStatStatusPanel(
-            contentRect: NSRect(origin: .zero, size: panelSize),
+            contentRect: NSRect(origin: .zero, size: PanelLayout.panelSize),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
@@ -365,7 +428,8 @@ final class MenuStatAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
         hostingController?.rootView = MenuStatPanelRoot(
             snapshot: snapshot,
             preferences: displayPreferences,
-            height: panelSize.height,
+            width: PanelLayout.panelSize.width,
+            height: PanelLayout.panelSize.height,
             isVisible: isPanelVisible
         )
     }
@@ -374,25 +438,25 @@ final class MenuStatAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
         guard let buttonFrame = statusButtonFrameOnScreen() else {
             let screen = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 900, height: 700)
             return NSRect(
-                x: screen.maxX - panelSize.width - 12,
-                y: screen.maxY - panelSize.height - 12,
-                width: panelSize.width,
-                height: panelSize.height
+                x: screen.maxX - PanelLayout.panelSize.width - 12,
+                y: screen.maxY - PanelLayout.panelSize.height - 12,
+                width: PanelLayout.panelSize.width,
+                height: PanelLayout.panelSize.height
             )
         }
 
         let screen = statusItem?.button?.window?.screen ?? NSScreen.main
         let visibleFrame = screen?.visibleFrame ?? buttonFrame
         let x = min(
-            max(buttonFrame.midX - panelSize.width / 2, visibleFrame.minX + 8),
-            visibleFrame.maxX - panelSize.width - 8
+            max(buttonFrame.midX - PanelLayout.panelSize.width / 2, visibleFrame.minX + 8),
+            visibleFrame.maxX - PanelLayout.panelSize.width - 8
         )
         let y = max(
             visibleFrame.minY + 8,
-            buttonFrame.minY - panelSize.height - panelGap
+            buttonFrame.minY - PanelLayout.panelSize.height - panelGap
         )
 
-        return NSRect(x: x, y: y, width: panelSize.width, height: panelSize.height)
+        return NSRect(x: x, y: y, width: PanelLayout.panelSize.width, height: PanelLayout.panelSize.height)
     }
 
     private func statusButtonFrameOnScreen() -> NSRect? {
@@ -429,34 +493,42 @@ final class MenuStatAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
         if statusButtonFrameOnScreen()?.insetBy(dx: -6, dy: -6).contains(point) == true { return }
         hidePanel()
     }
+}
 
-    private func rebuildStatusMenu() {
+private extension MenuStatAppDelegate {
+    func rebuildStatusMenu() {
         guard let menu = statusMenu else { return }
         menu.removeAllItems()
+        addHeaderItems(to: menu)
+        addPreferenceItems(to: menu)
+        addUtilityItems(to: menu)
+        addTopCPUItems(to: menu)
+        addQuitItem(to: menu)
+    }
 
-        let title = NSMenuItem(title: "MenuStat", action: nil, keyEquivalent: "")
-        title.isEnabled = false
-        menu.addItem(title)
-
-        let versionItem = NSMenuItem(title: versionDisplay, action: nil, keyEquivalent: "")
-        versionItem.isEnabled = false
-        menu.addItem(versionItem)
-
-        let summary = NSMenuItem(
+    func addHeaderItems(to menu: NSMenu) {
+        addDisabledItem(title: "MenuStat", to: menu)
+        addDisabledItem(title: versionDisplay, to: menu)
+        addDisabledItem(
             title: "\(snapshot.menuTitle)  Fans \(snapshot.fans.percentTitle) \(snapshot.fans.statusTitle)",
-            action: nil,
-            keyEquivalent: ""
+            to: menu
         )
-        summary.isEnabled = false
-        menu.addItem(summary)
-
         menu.addItem(.separator())
 
         let openItem = NSMenuItem(title: "Open Details", action: #selector(openDetails(_:)), keyEquivalent: "")
         openItem.target = self
         openItem.isEnabled = true
         menu.addItem(openItem)
+    }
 
+    func addPreferenceItems(to menu: NSMenu) {
+        menu.addItem(submenuItem(title: "Refresh Rate", submenu: refreshRateMenu()))
+        menu.addItem(submenuItem(title: "Top App Rows", submenu: topAppRowsMenu()))
+        menu.addItem(submenuItem(title: "Menu Bar Metric", submenu: menuBarMetricMenu()))
+        menu.addItem(submenuItem(title: "Visible Sections", submenu: visibleSectionsMenu()))
+    }
+
+    func addUtilityItems(to menu: NSMenu) {
         let launchAtLoginStatus = SMAppService.mainApp.status
         let launchAtLoginItem = NSMenuItem(
             title: launchAtLoginTitle(launchAtLoginStatus),
@@ -473,28 +545,84 @@ final class MenuStatAppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
         aboutItem.isEnabled = true
         menu.addItem(aboutItem)
 
-        let copyrightItem = NSMenuItem(title: copyrightText, action: nil, keyEquivalent: "")
-        copyrightItem.isEnabled = false
-        menu.addItem(copyrightItem)
-
+        addDisabledItem(title: copyrightText, to: menu)
         menu.addItem(.separator())
+    }
 
-        let cpuHeader = NSMenuItem(title: "Top CPU Apps", action: nil, keyEquivalent: "")
-        cpuHeader.isEnabled = false
-        menu.addItem(cpuHeader)
-
+    func addTopCPUItems(to menu: NSMenu) {
+        addDisabledItem(title: "Top CPU Apps", to: menu)
         for app in snapshot.apps.topCPU.prefix(5) {
-            let item = NSMenuItem(title: "\(app.name)  \(app.cpuDisplay)", action: nil, keyEquivalent: "")
-            item.isEnabled = false
-            menu.addItem(item)
+            addDisabledItem(title: "\(app.name)  \(app.cpuDisplay)", to: menu)
         }
-
         menu.addItem(.separator())
+    }
 
+    func addQuitItem(to menu: NSMenu) {
         let quitItem = NSMenuItem(title: "Quit MenuStat", action: #selector(quitMenuStat(_:)), keyEquivalent: "q")
         quitItem.target = self
         quitItem.isEnabled = true
         menu.addItem(quitItem)
+    }
+
+    func refreshRateMenu() -> NSMenu {
+        let menu = NSMenu()
+        for interval in RefreshInterval.allCases {
+            let item = NSMenuItem(title: interval.menuTitle, action: #selector(setRefreshInterval(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = interval.rawValue
+            item.state = displayPreferences.refreshInterval == interval ? .on : .off
+            menu.addItem(item)
+        }
+        return menu
+    }
+
+    func topAppRowsMenu() -> NSMenu {
+        let menu = NSMenu()
+        for rows in TopAppRowCount.allCases {
+            let item = NSMenuItem(title: rows.menuTitle, action: #selector(setTopAppRows(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = rows.rawValue
+            item.state = displayPreferences.topAppRows == rows ? .on : .off
+            menu.addItem(item)
+        }
+        return menu
+    }
+
+    func menuBarMetricMenu() -> NSMenu {
+        let menu = NSMenu()
+        for metric in MetricKind.allCases {
+            let item = NSMenuItem(title: metric.shortTitle, action: #selector(setPrimaryMetric(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = metric.rawValue
+            item.state = displayPreferences.primaryMetric == metric ? .on : .off
+            menu.addItem(item)
+        }
+        return menu
+    }
+
+    func visibleSectionsMenu() -> NSMenu {
+        let menu = NSMenu()
+        for section in MetricKind.allCases {
+            let item = NSMenuItem(title: section.shortTitle, action: #selector(toggleVisibleSection(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = section.rawValue
+            item.state = displayPreferences.isVisible(section) ? .on : .off
+            item.isEnabled = displayPreferences.isVisible(section) ? displayPreferences.visibleSections.count > 1 : true
+            menu.addItem(item)
+        }
+        return menu
+    }
+
+    func submenuItem(title: String, submenu: NSMenu) -> NSMenuItem {
+        let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+        item.submenu = submenu
+        return item
+    }
+
+    func addDisabledItem(title: String, to menu: NSMenu) {
+        let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+        item.isEnabled = false
+        menu.addItem(item)
     }
 }
 
@@ -508,9 +636,10 @@ private final class MenuStatStatusPanel: NSPanel {
     }
 }
 
-private struct MenuStatPanelRoot: View {
+struct MenuStatPanelRoot: View {
     let snapshot: SystemSnapshot
     @ObservedObject var preferences: DisplayPreferences
+    let width: CGFloat
     let height: CGFloat
     let isVisible: Bool
 
@@ -518,7 +647,7 @@ private struct MenuStatPanelRoot: View {
         ZStack(alignment: .top) {
             MenuStatPanelView(snapshot: snapshot, preferences: preferences, isVisible: isVisible)
         }
-        .frame(width: 430, height: height - 12, alignment: .top)
+        .frame(width: width - 12, height: height - 12, alignment: .top)
         .padding(6)
     }
 }

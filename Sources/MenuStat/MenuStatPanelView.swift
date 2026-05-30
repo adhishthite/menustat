@@ -3,7 +3,7 @@ import SwiftUI
 
 // MARK: - Brand palette
 
-private enum Brand {
+enum Brand {
     static let bg = Color(red: 0.039, green: 0.039, blue: 0.043)
     static let surface = Color(red: 0.071, green: 0.071, blue: 0.078)
     static let surfaceHi = Color(red: 0.094, green: 0.094, blue: 0.102)
@@ -26,7 +26,7 @@ private enum Brand {
 private extension MetricKind {
     var fullName: String {
         switch self {
-        case .cpu: "PROCESSOR"
+        case .cpu: "SYSTEM CPU"
         case .memory: "MEMORY"
         case .gpu: "GRAPHICS"
         case .pressure: "PRESSURE"
@@ -47,21 +47,25 @@ private extension MetricKind {
 
 // MARK: - Typography modifiers
 
-private extension View {
+private enum TypeScale {
+    static let pointBump: CGFloat = 2
+}
+
+extension View {
     func microLabel(_ tint: Color = Brand.mute) -> some View {
-        font(.system(size: 9, weight: .semibold, design: .monospaced))
+        font(.system(size: 9 + TypeScale.pointBump, weight: .semibold, design: .monospaced))
             .tracking(1.6)
             .foregroundStyle(tint)
             .textCase(.uppercase)
     }
 
     func bodyMono(_ tint: Color = Brand.text, weight: Font.Weight = .medium) -> some View {
-        font(.system(size: 11, weight: weight, design: .monospaced))
+        font(.system(size: 11 + TypeScale.pointBump, weight: weight, design: .monospaced))
             .foregroundStyle(tint)
     }
 
     func numeric(_ size: CGFloat, weight: Font.Weight = .bold, tint: Color = Brand.text) -> some View {
-        font(.system(size: size, weight: weight, design: .monospaced))
+        font(.system(size: size + TypeScale.pointBump, weight: weight, design: .monospaced))
             .foregroundStyle(tint)
             .monospacedDigit()
     }
@@ -74,23 +78,31 @@ struct MenuStatPanelView: View {
     @ObservedObject var preferences: DisplayPreferences
     let isVisible: Bool
     @State private var activeSection: MetricKind = .cpu
+    @State private var hoverHelp: String?
 
     var body: some View {
         VStack(spacing: 0) {
-            HeaderRow(snapshot: snapshot, isVisible: isVisible)
+            HeaderRow(snapshot: snapshot, refreshInterval: preferences.refreshInterval, isVisible: isVisible)
             Hairline()
             DisplayControls(preferences: preferences)
             Hairline()
             MetricStrip(snapshot: snapshot, preferences: preferences, active: $activeSection)
             Hairline()
-            DetailPane(section: activeSection, snapshot: snapshot)
+            DetailPane(section: activeSection, snapshot: snapshot, topAppRows: preferences.topAppRows.rawValue)
         }
+        .environment(\.setHoverHelp, setHoverHelp)
         .background(panelBackground)
         .overlay(
             Rectangle()
                 .stroke(Brand.lineHi, lineWidth: 1)
                 .allowsHitTesting(false)
         )
+        .overlay(alignment: .bottom) {
+            HoverHelpRail(text: hoverHelp)
+                .padding(.horizontal, 22)
+                .padding(.bottom, 18)
+                .allowsHitTesting(false)
+        }
         .onAppear(perform: ensureActiveSectionVisible)
         .onReceive(preferences.$visibleSections) { _ in
             ensureActiveSectionVisible()
@@ -110,12 +122,73 @@ struct MenuStatPanelView: View {
         guard !preferences.isVisible(activeSection) else { return }
         activeSection = preferences.visibleSectionsInDisplayOrder().first ?? .cpu
     }
+
+    private func setHoverHelp(_ text: String?) {
+        withAnimation(.easeOut(duration: 0.12)) {
+            hoverHelp = text
+        }
+    }
+}
+
+private struct HoverHelpActionKey: EnvironmentKey {
+    static let defaultValue: (String?) -> Void = { _ in }
+}
+
+private extension EnvironmentValues {
+    var setHoverHelp: (String?) -> Void {
+        get { self[HoverHelpActionKey.self] }
+        set { self[HoverHelpActionKey.self] = newValue }
+    }
+}
+
+private struct HoverHelpModifier: ViewModifier {
+    @Environment(\.setHoverHelp) private var setHoverHelp
+    let text: String
+
+    func body(content: Content) -> some View {
+        content
+            .help(text)
+            .onHover { isHovering in
+                setHoverHelp(isHovering ? text : nil)
+            }
+            .onDisappear {
+                setHoverHelp(nil)
+            }
+    }
+}
+
+extension View {
+    func hoverHelp(_ text: String) -> some View {
+        modifier(HoverHelpModifier(text: text))
+    }
+}
+
+private struct HoverHelpRail: View {
+    let text: String?
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Text("INFO")
+                .microLabel(Brand.cpu)
+            Text(text ?? "HOVER ANY METRIC FOR A PLAIN-ENGLISH DEFINITION")
+                .microLabel(text == nil ? Brand.micro : Brand.mute)
+                .lineLimit(2)
+                .minimumScaleFactor(0.75)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 13)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Brand.surface.opacity(0.96))
+        .overlay(Rectangle().stroke(Brand.lineHi, lineWidth: 1))
+    }
 }
 
 // MARK: - Header
 
 private struct HeaderRow: View {
     let snapshot: SystemSnapshot
+    let refreshInterval: RefreshInterval
     let isVisible: Bool
 
     var body: some View {
@@ -135,13 +208,13 @@ private struct HeaderRow: View {
     }()
 
     private func content(date: Date) -> some View {
-        HStack(alignment: .center, spacing: 10) {
+        HStack(alignment: .center, spacing: 16) {
             LiveryBar(tint: Brand.cpu)
 
-            VStack(alignment: .leading, spacing: 5) {
-                HStack(spacing: 6) {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(spacing: 10) {
                     Text("MENUSTAT")
-                        .font(.system(size: 13, weight: .black, design: .monospaced))
+                        .font(.system(size: 13 + TypeScale.pointBump, weight: .black, design: .monospaced))
                         .tracking(2.4)
                         .foregroundStyle(Brand.text)
                     Text("//")
@@ -149,13 +222,13 @@ private struct HeaderRow: View {
                     Text("APPLE M-SERIES")
                         .microLabel()
                 }
-                HStack(spacing: 8) {
+                HStack(spacing: 12) {
                     StatusDot(color: Brand.mem, isActive: isVisible)
                     Text("LIVE")
                         .microLabel(Brand.mute)
                     Text("·")
                         .microLabel(Brand.micro)
-                    Text("REFRESH 5s")
+                    Text("REFRESH \(refreshInterval.shortTitle)")
                         .microLabel(Brand.mute)
                     Text("·")
                         .microLabel(Brand.micro)
@@ -166,15 +239,15 @@ private struct HeaderRow: View {
 
             Spacer()
 
-            VStack(alignment: .trailing, spacing: 5) {
+            VStack(alignment: .trailing, spacing: 10) {
                 Text(Self.clockFormatter.string(from: date))
                     .numeric(15, weight: .bold)
                 Text("T-\(timeAgo(from: snapshot.updatedAt, now: date))")
                     .microLabel(Brand.mute)
             }
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 15)
+        .padding(.horizontal, 24)
+        .padding(.vertical, 24)
     }
 
     private func timeAgo(from date: Date, now: Date) -> String {
@@ -189,7 +262,7 @@ private struct LiveryBar: View {
     var body: some View {
         Rectangle()
             .fill(tint)
-            .frame(width: 3, height: 32)
+            .frame(width: 4, height: 42)
     }
 }
 
@@ -218,8 +291,8 @@ private struct DisplayControls: View {
     @ObservedObject var preferences: DisplayPreferences
 
     var body: some View {
-        VStack(spacing: 11) {
-            HStack(spacing: 12) {
+        VStack(spacing: 18) {
+            HStack(spacing: 20) {
                 Text("MENU")
                     .microLabel(Brand.micro)
                 Picker("", selection: $preferences.primaryMetric) {
@@ -229,12 +302,13 @@ private struct DisplayControls: View {
                 }
                 .pickerStyle(.segmented)
                 .labelsHidden()
+                .frame(maxWidth: .infinity)
             }
 
-            HStack(spacing: 12) {
+            HStack(spacing: 20) {
                 Text("SHOW")
                     .microLabel(Brand.micro)
-                HStack(spacing: 6) {
+                HStack(spacing: 12) {
                     ForEach(MetricKind.allCases) { section in
                         SectionToggle(
                             section: section,
@@ -247,9 +321,35 @@ private struct DisplayControls: View {
                 }
                 Spacer(minLength: 0)
             }
+
+            HStack(spacing: 20) {
+                Text("RATE")
+                    .microLabel(Brand.micro)
+                Picker("", selection: $preferences.refreshInterval) {
+                    ForEach(RefreshInterval.allCases) { interval in
+                        Text(interval.shortTitle).tag(interval)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .frame(width: 220)
+
+                Text("ROWS")
+                    .microLabel(Brand.micro)
+                Picker("", selection: $preferences.topAppRows) {
+                    ForEach(TopAppRowCount.allCases) { rows in
+                        Text(rows.shortTitle).tag(rows)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .frame(width: 180)
+
+                Spacer(minLength: 0)
+            }
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
+        .padding(.horizontal, 24)
+        .padding(.vertical, 22)
         .background(Brand.surface.opacity(0.72))
     }
 }
@@ -262,11 +362,11 @@ private struct SectionToggle: View {
     var body: some View {
         Button(action: action) {
             Text(section.shortTitle)
-                .font(.system(size: 9, weight: .bold, design: .monospaced))
+                .font(.system(size: 9 + TypeScale.pointBump, weight: .bold, design: .monospaced))
                 .foregroundStyle(isOn ? Brand.bg : Brand.mute)
                 .lineLimit(1)
                 .minimumScaleFactor(0.65)
-                .frame(width: 38, height: 24)
+                .frame(width: 58, height: 32)
                 .background(isOn ? section.tint : Brand.bg)
                 .overlay(Rectangle().stroke(isOn ? section.tint : Brand.lineHi, lineWidth: 1))
         }
@@ -296,7 +396,7 @@ private struct MetricStrip: View {
                 }
             }
         }
-        .frame(height: 112)
+        .frame(height: 156)
     }
 }
 
@@ -322,13 +422,13 @@ private struct MetricTile: View {
                 Spacer(minLength: 0)
             }
 
-            VStack(alignment: .leading, spacing: 9) {
+            VStack(alignment: .leading, spacing: 16) {
                 Text(section.shortTitle)
                     .microLabel(active ? accent : Brand.mute)
-                    .padding(.top, 6)
+                    .padding(.top, 8)
 
                 Text(value)
-                    .numeric(22, weight: .heavy, tint: active ? Brand.text : Brand.text.opacity(0.78))
+                    .numeric(28, weight: .heavy, tint: active ? Brand.text : Brand.text.opacity(0.78))
                     .lineLimit(1)
                     .minimumScaleFactor(0.6)
 
@@ -338,8 +438,8 @@ private struct MetricTile: View {
                     .microLabel(Brand.mute)
                     .lineLimit(1)
             }
-            .padding(.horizontal, 13)
-            .padding(.bottom, 11)
+            .padding(.horizontal, 20)
+            .padding(.bottom, 20)
 
             if active {
                 CornerBrackets(tint: accent)
@@ -350,6 +450,7 @@ private struct MetricTile: View {
         .background(active ? Brand.surface : Brand.bg)
         .contentShape(Rectangle())
         .onTapGesture(perform: onTap)
+        .hoverHelp(section.tileHelp)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(section.fullName)
         .accessibilityValue("\(value), \(caption)")
@@ -416,28 +517,30 @@ private struct CornerBrackets: View {
 private struct DetailPane: View {
     let section: MetricKind
     let snapshot: SystemSnapshot
+    let topAppRows: Int
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             DetailHeader(section: section, snapshot: snapshot)
             Hairline()
             ScrollView {
-                VStack(alignment: .leading, spacing: 18) {
+                VStack(alignment: .leading, spacing: 30) {
                     switch section {
                     case .cpu:
-                        CPUDetail(snapshot: snapshot)
+                        CPUDetail(snapshot: snapshot, topAppRows: topAppRows)
                     case .memory:
-                        MemoryDetail(snapshot: snapshot)
+                        MemoryDetail(snapshot: snapshot, topAppRows: topAppRows)
                     case .gpu:
-                        GPUDetail(snapshot: snapshot)
+                        GPUDetail(snapshot: snapshot, topAppRows: topAppRows)
                     case .pressure:
-                        PressureDetail(snapshot: snapshot)
+                        PressureDetail(snapshot: snapshot, topAppRows: topAppRows)
                     case .fans:
-                        FanDetail(snapshot: snapshot)
+                        FanDetail(snapshot: snapshot, topAppRows: topAppRows)
                     }
                 }
-                .padding(.horizontal, 18)
-                .padding(.vertical, 18)
+                .padding(.horizontal, 28)
+                .padding(.top, 30)
+                .padding(.bottom, 84)
             }
             .scrollIndicators(.never)
         }
@@ -465,12 +568,12 @@ private struct DetailHeader: View {
     }
 
     var body: some View {
-        HStack(alignment: .center, spacing: 12) {
+        HStack(alignment: .center, spacing: 18) {
             Rectangle()
                 .fill(section.tint)
-                .frame(width: 3, height: 32)
+                .frame(width: 4, height: 42)
 
-            VStack(alignment: .leading, spacing: 5) {
+            VStack(alignment: .leading, spacing: 10) {
                 Text(section.fullName)
                     .microLabel(section.tint)
                 Text(subtitle)
@@ -481,12 +584,13 @@ private struct DetailHeader: View {
             Spacer()
 
             Text(valueText)
-                .numeric(18, weight: .heavy)
+                .numeric(24, weight: .heavy)
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 15)
+        .padding(.horizontal, 24)
+        .padding(.vertical, 24)
+        .hoverHelp(section.detailHelp)
     }
 }
 
@@ -494,83 +598,170 @@ private struct DetailHeader: View {
 
 private struct CPUDetail: View {
     let snapshot: SystemSnapshot
+    let topAppRows: Int
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            MeterRow(label: "USER", value: snapshot.cpu.user, tint: Brand.cpu)
-            MeterRow(label: "SYSTEM", value: snapshot.cpu.system, tint: Brand.pressure)
-            MeterRow(label: "IDLE", value: snapshot.cpu.idle, tint: Brand.mute)
+        VStack(alignment: .leading, spacing: 32) {
+            MeterRow(label: "USER", value: snapshot.cpu.user, tint: Brand.cpu, help: "CPU time spent running app and user-space code.")
+            MeterRow(
+                label: "SYSTEM",
+                value: snapshot.cpu.system,
+                tint: Brand.pressure,
+                help: "CPU time spent inside the macOS kernel and system services."
+            )
+            MeterRow(
+                label: "IDLE",
+                value: snapshot.cpu.idle,
+                tint: Brand.mute,
+                help: "CPU capacity that was not used during the last sample."
+            )
 
             DatumGrid(items: [
-                DatumItem(label: "BUSIEST", value: snapshot.cpu.busiestCore.percentString),
-                DatumItem(label: "LOGICAL", value: "\(snapshot.coreCount)"),
-                DatumItem(label: "UPTIME", value: snapshot.uptime.uptimeDetailString),
-                DatumItem(label: "NICE", value: snapshot.cpu.nice.percentString)
+                DatumItem(
+                    label: "BUSIEST",
+                    value: snapshot.cpu.busiestCore.percentString,
+                    help: "The highest-loaded individual logical CPU core in this sample."
+                ),
+                DatumItem(
+                    label: "LOGICAL",
+                    value: "\(snapshot.coreCount)",
+                    help: "Logical CPU cores visible to macOS. On Apple Silicon, these may include performance and efficiency cores."
+                ),
+                DatumItem(
+                    label: "UPTIME",
+                    value: snapshot.uptime.uptimeDetailString,
+                    help: "How long this Mac has been running since the last boot."
+                ),
+                DatumItem(
+                    label: "NICE",
+                    value: snapshot.cpu.nice.percentString,
+                    help: "CPU time used by low-priority processes. Usually near zero on macOS."
+                )
             ])
 
-            CorePlot(values: snapshot.cpu.perCore)
+            CorePlot(values: snapshot.cpu.perCore, coreTypes: snapshot.cpu.coreTypes)
 
-            TopAppList(title: "TOP PROCESSES · CPU", apps: snapshot.apps.topCPU, kind: .cpu)
+            TopAppList(
+                title: "TOP APPS · CPU",
+                apps: snapshot.apps.topCPU,
+                kind: .cpu,
+                limit: topAppRows,
+                note: "SYSTEM TOTAL INCLUDES KERNEL WORK + ALL PROCESSES"
+            )
         }
     }
 }
 
 private struct MemoryDetail: View {
     let snapshot: SystemSnapshot
+    let topAppRows: Int
 
     private var memory: MemorySnapshot {
         snapshot.memory
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            MeterRow(label: "USED", value: memory.usedPercent, tint: Brand.mem)
-            MeterRow(label: "AVAILABLE", value: memory.freePercent, tint: Brand.fan)
+        VStack(alignment: .leading, spacing: 32) {
+            MeterRow(label: "USED", value: memory.usedPercent, tint: Brand.mem, help: "Share of unified memory currently in use.")
+            MeterRow(
+                label: "AVAILABLE",
+                value: memory.freePercent,
+                tint: Brand.fan,
+                help: "Memory macOS can use without immediately reclaiming active pages."
+            )
 
             DatumGrid(
                 items: [
-                    DatumItem(label: "TOTAL", value: memory.total.formattedBytesShort),
-                    DatumItem(label: "USED", value: memory.used.formattedBytesShort),
-                    DatumItem(label: "FREE", value: (memory.free + memory.inactive + memory.speculative).formattedBytesShort),
-                    DatumItem(label: "ACTIVE", value: memory.active.formattedBytesShort),
-                    DatumItem(label: "WIRED", value: memory.wired.formattedBytesShort),
-                    DatumItem(label: "COMPR", value: memory.compressed.formattedBytesShort)
+                    DatumItem(label: "TOTAL", value: memory.total.formattedBytesShort, help: "Total unified memory installed in this Mac."),
+                    DatumItem(
+                        label: "USED",
+                        value: memory.used.formattedBytesShort,
+                        help: "Memory currently assigned to apps, system services, cache, wired pages, and compressed pages."
+                    ),
+                    DatumItem(
+                        label: "FREE",
+                        value: (memory.free + memory.inactive + memory.speculative).formattedBytesShort,
+                        help: "Free, inactive, and speculative memory that can be reused quickly."
+                    ),
+                    DatumItem(
+                        label: "ACTIVE",
+                        value: memory.active.formattedBytesShort,
+                        help: "Memory actively used by running processes."
+                    ),
+                    DatumItem(
+                        label: "WIRED",
+                        value: memory.wired.formattedBytesShort,
+                        help: "Memory the kernel cannot page out. Drivers, kernel objects, and hardware mappings often live here."
+                    ),
+                    DatumItem(
+                        label: "COMPR",
+                        value: memory.compressed.formattedBytesShort,
+                        help: "Memory compressed by macOS to avoid slower disk swap."
+                    )
                 ],
                 columns: 3
             )
 
-            TopAppList(title: "TOP PROCESSES · MEM", apps: snapshot.apps.topMemory, kind: .memory)
+            TopAppList(title: "TOP PROCESSES · MEM", apps: snapshot.apps.topMemory, kind: .memory, limit: topAppRows)
         }
     }
 }
 
 private struct GPUDetail: View {
     let snapshot: SystemSnapshot
+    let topAppRows: Int
 
     private var gpu: GPUSnapshot {
         snapshot.gpu
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 20) {
+        VStack(alignment: .leading, spacing: 32) {
             if let utilization = gpu.utilization {
-                MeterRow(label: "DEVICE", value: utilization, tint: Brand.gpu)
-                MeterRow(label: "RENDER", value: gpu.rendererUtilization ?? 0, tint: Brand.cpu)
-                MeterRow(label: "TILER", value: gpu.tilerUtilization ?? 0, tint: Brand.fan)
+                MeterRow(
+                    label: "DEVICE",
+                    value: utilization,
+                    tint: Brand.gpu,
+                    help: "Overall AGX GPU device utilization reported by IORegistry."
+                )
+                MeterRow(
+                    label: "RENDER",
+                    value: gpu.rendererUtilization ?? 0,
+                    tint: Brand.cpu,
+                    help: "GPU renderer workload. Higher values usually mean fragment or compute-heavy graphics work."
+                )
+                MeterRow(
+                    label: "TILER",
+                    value: gpu.tilerUtilization ?? 0,
+                    tint: Brand.fan,
+                    help: "GPU tiler workload. Higher values usually mean geometry or tile setup pressure."
+                )
 
                 DatumGrid(
                     items: [
-                        DatumItem(label: "STATE", value: gpu.statusTitle.uppercased()),
-                        DatumItem(label: "CORES", value: gpu.coreCount.map(String.init) ?? "--"),
-                        DatumItem(label: "MEM", value: gpu.memoryBytes?.formattedBytesShort ?? "--"),
-                        DatumItem(label: "MODEL", value: gpu.model ?? "Apple GPU"),
-                        DatumItem(label: "SOURCE", value: gpu.source),
-                        DatumItem(label: "LOAD", value: gpu.tileValue)
+                        DatumItem(
+                            label: "STATE",
+                            value: gpu.statusTitle.uppercased(),
+                            help: "MenuStat's simple activity bucket for the current GPU load."
+                        ),
+                        DatumItem(
+                            label: "CORES",
+                            value: gpu.coreCount.map(String.init) ?? "--",
+                            help: "GPU core count reported by the Apple AGX device, when exposed."
+                        ),
+                        DatumItem(
+                            label: "MEM",
+                            value: gpu.memoryBytes?.formattedBytesShort ?? "--",
+                            help: "Unified memory currently attributed to GPU use, when exposed."
+                        ),
+                        DatumItem(label: "MODEL", value: gpu.model ?? "Apple GPU", help: "GPU model string reported by IORegistry."),
+                        DatumItem(label: "SOURCE", value: gpu.source, help: "Telemetry source used for this GPU sample."),
+                        DatumItem(label: "LOAD", value: gpu.tileValue, help: "Current total GPU utilization.")
                     ],
                     columns: 3
                 )
             } else {
-                VStack(alignment: .leading, spacing: 10) {
+                VStack(alignment: .leading, spacing: 16) {
                     Text("NO GPU TELEMETRY")
                         .microLabel(Brand.alert)
                     Text(gpu.detail)
@@ -579,43 +770,57 @@ private struct GPUDetail: View {
                     Text("SOURCE · \(gpu.source.uppercased())")
                         .microLabel(Brand.micro)
                 }
-                .padding(11)
+                .padding(18)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .overlay(Rectangle().stroke(Brand.alert.opacity(0.45), lineWidth: 1))
             }
 
-            TopAppList(title: "TOP PROCESSES · CPU PROXY", apps: snapshot.apps.topCPU, kind: .cpu)
+            TopAppList(title: "TOP PROCESSES · CPU PROXY", apps: snapshot.apps.topCPU, kind: .cpu, limit: topAppRows)
         }
     }
 }
 
 private struct PressureDetail: View {
     let snapshot: SystemSnapshot
+    let topAppRows: Int
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 20) {
+        VStack(alignment: .leading, spacing: 32) {
             PressureGauge(pressure: snapshot.pressure, usedPercent: snapshot.memory.usedPercent)
 
             DatumGrid(items: [
-                DatumItem(label: "STATE", value: snapshot.pressure.shortTitle),
-                DatumItem(label: "FREE PAGES", value: snapshot.memory.free.formattedBytesShort),
-                DatumItem(label: "PAGE SIZE", value: snapshot.memory.pageSize.formattedBytesShort)
+                DatumItem(
+                    label: "STATE",
+                    value: snapshot.pressure.shortTitle,
+                    help: "macOS memory pressure state: normal, moderate, or high."
+                ),
+                DatumItem(
+                    label: "FREE PAGES",
+                    value: snapshot.memory.free.formattedBytesShort,
+                    help: "Memory pages currently free before macOS reclaims inactive or compressed memory."
+                ),
+                DatumItem(
+                    label: "PAGE SIZE",
+                    value: snapshot.memory.pageSize.formattedBytesShort,
+                    help: "The byte size of each virtual memory page on this Mac."
+                )
             ])
 
-            TopAppList(title: "HEAT PROXY · LIKELY DRIVERS", apps: snapshot.apps.topHeat, kind: .heat)
+            TopAppList(title: "HEAT PROXY · LIKELY DRIVERS", apps: snapshot.apps.topHeat, kind: .heat, limit: topAppRows)
         }
     }
 }
 
 private struct FanDetail: View {
     let snapshot: SystemSnapshot
+    let topAppRows: Int
 
     private var fans: FanSnapshot {
         snapshot.fans
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 20) {
+        VStack(alignment: .leading, spacing: 32) {
             if fans.speeds.isEmpty {
                 EmptyFanReadout(fans: fans)
             } else {
@@ -630,16 +835,20 @@ private struct FanDetail: View {
                 }
 
                 DatumGrid(items: [
-                    DatumItem(label: "STATE", value: "\(fans.percentTitle) · \(fans.statusTitle.uppercased())"),
-                    DatumItem(label: "CURRENT", value: fans.rpmText),
-                    DatumItem(label: "RANGE", value: fans.rangeText)
+                    DatumItem(
+                        label: "STATE",
+                        value: "\(fans.percentTitle) · \(fans.statusTitle.uppercased())",
+                        help: "Fan speed normalized against the fan's reported min and max range."
+                    ),
+                    DatumItem(label: "CURRENT", value: fans.rpmText, help: "Current fan speed in revolutions per minute."),
+                    DatumItem(label: "RANGE", value: fans.rangeText, help: "Reported minimum and maximum fan RPM range from SMC.")
                 ])
 
                 Text("SOURCE · \(fans.source.uppercased())")
                     .microLabel(Brand.micro)
             }
 
-            TopAppList(title: "LIKELY THERMAL DRIVERS", apps: snapshot.apps.topHeat, kind: .heat)
+            TopAppList(title: "LIKELY THERMAL DRIVERS", apps: snapshot.apps.topHeat, kind: .heat, limit: topAppRows)
         }
     }
 }
@@ -648,7 +857,7 @@ private struct EmptyFanReadout: View {
     let fans: FanSnapshot
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 16) {
             Text("NO TELEMETRY")
                 .microLabel(Brand.alert)
             Text(fans.detail)
@@ -665,7 +874,7 @@ private struct EmptyFanReadout: View {
                 }
             }
         }
-        .padding(11)
+        .padding(18)
         .frame(maxWidth: .infinity, alignment: .leading)
         .overlay(Rectangle().stroke(Brand.alert.opacity(0.45), lineWidth: 1))
     }
@@ -679,7 +888,7 @@ private struct FanReadout: View {
     let maxSpeed: Int?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .firstTextBaseline) {
                 HStack(spacing: 5) {
                     Text(String(format: "FAN.%02d", index))
@@ -699,8 +908,9 @@ private struct FanReadout: View {
             }
             SegmentedBar(value: ratio, tint: Brand.fan, segments: 24, lit: true)
         }
-        .padding(10)
+        .padding(18)
         .background(Brand.surface)
+        .hoverHelp("Current fan speed and where it sits inside the fan's reported RPM range.")
     }
 
     private var rangeText: String {
@@ -720,9 +930,10 @@ private struct MeterRow: View {
     let value: Double
     let tint: Color
     var trailing: String?
+    var help: String?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 5) {
+        VStack(alignment: .leading, spacing: 10) {
             HStack {
                 Text(label)
                     .microLabel(Brand.mute)
@@ -732,6 +943,7 @@ private struct MeterRow: View {
             }
             SegmentedBar(value: value, tint: tint, segments: 28)
         }
+        .hoverHelp(help ?? "\(label) percentage for the current sample.")
     }
 }
 
@@ -740,7 +952,7 @@ private struct PressureGauge: View {
     let usedPercent: Double
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 14) {
             Text("PRESSURE INDEX")
                 .microLabel(Brand.mute)
             HStack(spacing: 6) {
@@ -750,8 +962,11 @@ private struct PressureGauge: View {
             }
             SegmentedBar(value: usedPercent, tint: pressure.tint, segments: 36)
         }
-        .padding(11)
+        .padding(18)
         .background(Brand.surface)
+        .hoverHelp(
+            "macOS memory pressure. Higher pressure means the system is reclaiming, compressing, or paging memory more aggressively."
+        )
     }
 }
 
@@ -768,19 +983,36 @@ private struct PressureCell: View {
                 .frame(height: 3)
         }
         .frame(maxWidth: .infinity)
+        .hoverHelp(level.helpText)
     }
 }
 
 private struct CorePlot: View {
     let values: [Double]
+    let coreTypes: [CPUCoreType]
+
+    private var effectiveCoreTypes: [CPUCoreType] {
+        values.indices.map { index in
+            index < coreTypes.count ? coreTypes[index] : .unknown
+        }
+    }
+
+    private var topologySummary: String {
+        let performanceCount = effectiveCoreTypes.filter { $0 == .performance }.count
+        let efficiencyCount = effectiveCoreTypes.filter { $0 == .efficiency }.count
+        if performanceCount > 0 || efficiencyCount > 0 {
+            return "\(performanceCount)P / \(efficiencyCount)E"
+        }
+        return "\(values.count) CORES"
+    }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 10) {
             HStack {
                 Text("PER-CORE ACTIVITY")
                     .microLabel(Brand.mute)
                 Spacer()
-                Text("\(values.count) CH")
+                Text(topologySummary)
                     .microLabel(Brand.micro)
             }
             if values.isEmpty {
@@ -789,27 +1021,65 @@ private struct CorePlot: View {
                     .frame(height: 44)
                     .overlay(Text("WAITING FOR SAMPLE").microLabel(Brand.micro))
             } else {
-                HStack(alignment: .bottom, spacing: 3) {
+                HStack(alignment: .bottom, spacing: 10) {
                     ForEach(Array(values.enumerated()), id: \.offset) { index, value in
-                        VStack(spacing: 4) {
-                            CoreBar(value: value)
-                            Text(String(format: "%02d", index))
-                                .font(.system(size: 7, weight: .bold, design: .monospaced))
-                                .foregroundStyle(Brand.micro)
+                        let coreType = effectiveCoreTypes[index]
+                        VStack(spacing: 7) {
+                            Text(value.percentString)
+                                .font(.system(size: 10 + TypeScale.pointBump, weight: .bold, design: .monospaced))
+                                .foregroundStyle(coreType.tint)
+                                .monospacedDigit()
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.7)
+                            CoreBar(value: value, coreType: coreType)
+                            Text(coreLabel(for: index, type: coreType))
+                                .font(.system(size: 9 + TypeScale.pointBump, weight: .bold, design: .monospaced))
+                                .foregroundStyle(coreType.tint.opacity(0.72))
                         }
+                        .frame(maxWidth: .infinity)
+                        .hoverHelp(coreHelp(for: index, type: coreType, value: value))
                     }
                 }
-                .frame(height: 56)
-                .padding(.vertical, 4)
-                .padding(.horizontal, 8)
+                .frame(height: 104)
+                .padding(.vertical, 12)
+                .padding(.horizontal, 14)
                 .background(Brand.surface)
             }
+        }
+    }
+
+    private func coreLabel(for index: Int, type: CPUCoreType) -> String {
+        switch type {
+        case .performance:
+            "P\(ordinal(for: index, type: type))"
+        case .efficiency:
+            "E\(ordinal(for: index, type: type))"
+        case .unknown:
+            String(format: "%02d", index)
+        }
+    }
+
+    private func ordinal(for index: Int, type: CPUCoreType) -> Int {
+        effectiveCoreTypes.prefix(index).filter { $0 == type }.count
+    }
+
+    private func coreHelp(for index: Int, type: CPUCoreType, value: Double) -> String {
+        switch type {
+        case .performance:
+            "Performance core \(ordinal(for: index, type: type)) is at \(value.percentString). " +
+                "macOS usually schedules heavier foreground work here."
+        case .efficiency:
+            "Efficiency core \(ordinal(for: index, type: type)) is at \(value.percentString). " +
+                "macOS uses these for lighter or background work."
+        case .unknown:
+            "Logical CPU core \(index) is at \(value.percentString)."
         }
     }
 }
 
 private struct CoreBar: View {
     let value: Double
+    let coreType: CPUCoreType
 
     var body: some View {
         GeometryReader { proxy in
@@ -818,309 +1088,27 @@ private struct CoreBar: View {
                 Rectangle()
                     .fill(Brand.line)
                 Rectangle()
-                    .fill(barColor(clamped))
+                    .fill(barColor(clamped, coreType: coreType))
                     .frame(height: max(2, proxy.size.height * clamped))
             }
         }
-        .frame(height: 40)
+        .frame(height: 58)
     }
 
-    private func barColor(_ value: Double) -> Color {
-        switch value {
-        case 0.85...: Brand.alert
-        case 0.55..<0.85: Brand.pressure
-        default: Brand.cpu
+    private func barColor(_ value: Double, coreType: CPUCoreType) -> Color {
+        if value >= 0.88 {
+            return Brand.alert
         }
+        return coreType.tint
     }
 }
 
-// MARK: - Tables
-
-private struct DatumItem: Identifiable {
-    let label: String
-    let value: String
-    var id: String {
-        label
-    }
-}
-
-private struct DatumGrid: View {
-    let items: [DatumItem]
-    var columns = 3
-
-    private var rows: [[DatumItem]] {
-        stride(from: 0, to: items.count, by: columns).map {
-            Array(items[$0..<min($0 + columns, items.count)])
-        }
-    }
-
-    var body: some View {
-        VStack(spacing: 0) {
-            ForEach(Array(rows.enumerated()), id: \.offset) { rowIndex, row in
-                HStack(spacing: 0) {
-                    ForEach(Array(row.enumerated()), id: \.element.id) { colIndex, item in
-                        DatumCell(item: item)
-                        if colIndex < row.count - 1 {
-                            VRule()
-                        }
-                    }
-                }
-                if rowIndex < rows.count - 1 {
-                    Hairline()
-                }
-            }
-        }
-        .overlay(Rectangle().stroke(Brand.line, lineWidth: 1))
-    }
-}
-
-private struct DatumCell: View {
-    let item: DatumItem
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(item.label)
-                .microLabel(Brand.mute)
-            Text(item.value)
-                .bodyMono(Brand.text, weight: .bold)
-                .lineLimit(1)
-                .minimumScaleFactor(0.65)
-        }
-        .padding(12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-}
-
-private enum TopAppKind {
-    case cpu
-    case memory
-    case heat
-
+private extension CPUCoreType {
     var tint: Color {
         switch self {
-        case .cpu: Brand.cpu
-        case .memory: Brand.mem
-        case .heat: Brand.pressure
+        case .performance: Brand.cpu
+        case .efficiency: Brand.mem
+        case .unknown: Brand.cpu
         }
     }
-}
-
-private struct TopAppList: View {
-    let title: String
-    let apps: [AppUsage]
-    let kind: TopAppKind
-
-    private var maxValue: Double {
-        apps.map(value(for:)).max() ?? 1
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Text(title)
-                    .microLabel(Brand.mute)
-                Spacer()
-                Text("\(apps.count) ROWS")
-                    .microLabel(Brand.micro)
-            }
-            if apps.isEmpty {
-                Text("NO SAMPLE")
-                    .microLabel(Brand.micro)
-                    .frame(maxWidth: .infinity, minHeight: 28)
-            } else {
-                VStack(spacing: 2) {
-                    ForEach(Array(apps.prefix(8).enumerated()), id: \.element.id) { index, app in
-                        TopAppRow(rank: index + 1, app: app, kind: kind, ratio: value(for: app) / max(maxValue, 1))
-                    }
-                }
-                .background(Brand.surface)
-            }
-        }
-    }
-
-    private func value(for app: AppUsage) -> Double {
-        switch kind {
-        case .cpu: app.cpuPercent
-        case .memory: Double(app.memoryBytes)
-        case .heat: app.heatScore
-        }
-    }
-}
-
-private struct TopAppRow: View {
-    let rank: Int
-    let app: AppUsage
-    let kind: TopAppKind
-    let ratio: Double
-
-    private var trailing: String {
-        switch kind {
-        case .cpu: app.cpuDisplay
-        case .memory: app.memoryBytes.formattedBytesShort
-        case .heat: app.heatDisplay
-        }
-    }
-
-    var body: some View {
-        ZStack(alignment: .leading) {
-            GeometryReader { proxy in
-                Rectangle()
-                    .fill(kind.tint.opacity(0.13))
-                    .frame(width: proxy.size.width * max(0, min(1, ratio)))
-            }
-
-            HStack(spacing: 8) {
-                Text(String(format: "%02d", rank))
-                    .microLabel(Brand.micro)
-                Text(app.name)
-                    .bodyMono(Brand.text, weight: .semibold)
-                    .lineLimit(1)
-                Spacer()
-                Text(trailing)
-                    .bodyMono(Brand.text, weight: .bold)
-                    .monospacedDigit()
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-        }
-        .frame(height: 30)
-    }
-}
-
-// MARK: - Hairlines and overlays
-
-private struct Hairline: View {
-    var body: some View {
-        Rectangle()
-            .fill(Brand.line)
-            .frame(height: 1)
-    }
-}
-
-private struct VRule: View {
-    var body: some View {
-        Rectangle()
-            .fill(Brand.line)
-            .frame(width: 1)
-    }
-}
-
-private struct ScanlineOverlay: View {
-    var body: some View {
-        Canvas { context, size in
-            let step: CGFloat = 3
-            let line = Path { path in
-                var y: CGFloat = 0
-                while y < size.height {
-                    path.move(to: CGPoint(x: 0, y: y))
-                    path.addLine(to: CGPoint(x: size.width, y: y))
-                    y += step
-                }
-            }
-            context.stroke(line, with: .color(.white.opacity(0.022)), lineWidth: 0.5)
-        }
-        .allowsHitTesting(false)
-    }
-}
-
-private struct VignetteOverlay: View {
-    var body: some View {
-        RadialGradient(
-            colors: [.clear, .black.opacity(0.35)],
-            center: .center,
-            startRadius: 80,
-            endRadius: 420
-        )
-        .allowsHitTesting(false)
-    }
-}
-
-// MARK: - Snapshot helpers
-
-private extension MetricKind {
-    func tileValue(_ snapshot: SystemSnapshot) -> String {
-        switch self {
-        case .cpu: snapshot.cpu.total.percentString
-        case .memory: snapshot.memory.usedPercent.percentString
-        case .gpu: snapshot.gpu.tileValue
-        case .pressure: snapshot.pressure.shortTitle
-        case .fans: snapshot.fans.tileValue
-        }
-    }
-
-    func progress(_ snapshot: SystemSnapshot) -> Double {
-        switch self {
-        case .cpu: snapshot.cpu.total
-        case .memory: snapshot.memory.usedPercent
-        case .gpu: snapshot.gpu.utilization ?? 0
-        case .pressure: snapshot.memory.usedPercent
-        case .fans: snapshot.fans.averageRangePercent
-        }
-    }
-
-    func tileCaption(_ snapshot: SystemSnapshot) -> String {
-        switch self {
-        case .cpu: "\(snapshot.coreCount) CORES"
-        case .memory: snapshot.memory.used.formattedBytesShort
-        case .gpu: snapshot.gpu.tileCaption
-        case .pressure: "RAM STATE"
-        case .fans: snapshot.fans.tileCaption
-        }
-    }
-}
-
-private extension MemoryPressure {
-    var tint: Color {
-        switch self {
-        case .normal: Brand.mem
-        case .moderate: Brand.pressure
-        case .high: Brand.alert
-        }
-    }
-
-    var shortTitle: String {
-        switch self {
-        case .normal: "NORMAL"
-        case .moderate: "ELEVATED"
-        case .high: "CRITICAL"
-        }
-    }
-}
-
-extension MemoryPressure: CaseIterable, Identifiable {
-    public static var allCases: [MemoryPressure] {
-        [.normal, .moderate, .high]
-    }
-
-    public var id: String {
-        shortTitle
-    }
-}
-
-private extension FanSnapshot {
-    var tileValue: String {
-        if speeds.isEmpty { return "—" }
-        return percentTitle
-    }
-
-    var tileCaption: String {
-        if speeds.isEmpty { return "OFFLINE" }
-        return statusTitle.uppercased()
-    }
-}
-
-private extension UInt64 {
-    var formattedBytesShort: String {
-        ByteFormatters.shortBytes.string(fromByteCount: Int64(self)).replacingOccurrences(of: " ", with: "")
-    }
-}
-
-private enum ByteFormatters {
-    static let shortBytes: ByteCountFormatter = {
-        let formatter = ByteCountFormatter()
-        formatter.countStyle = .memory
-        formatter.allowedUnits = [.useGB, .useMB, .useKB]
-        formatter.zeroPadsFractionDigits = false
-        return formatter
-    }()
 }
