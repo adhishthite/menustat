@@ -5,7 +5,7 @@ import ThemeToggle from "./ThemeToggle";
 const downloadUrl =
   "https://github.com/adhishthite/menustat/releases/latest/download/MenuStat.dmg";
 const repoUrl = "https://github.com/adhishthite/menustat";
-const version = "0.3.1";
+const version = "0.4.0";
 
 // Spread onto any anchor pointing off-site so it opens in a new tab safely.
 const ext = { target: "_blank", rel: "noopener noreferrer" } as const;
@@ -14,8 +14,8 @@ const signals = [
   {
     tag: "CPU",
     tone: "cpu",
-    title: "Every core, in real time",
-    body: "Total load with the user / system / idle split, plus per-core activity and the processes burning the most cycles."
+    title: "Performance and efficiency cores",
+    body: "System CPU split into user, system, idle, and per-core activity, with P/E labels so you can see where macOS is scheduling work."
   },
   {
     tag: "MEM",
@@ -32,8 +32,8 @@ const signals = [
   {
     tag: "PRES",
     tone: "pres",
-    title: "Memory pressure gauge",
-    body: "Normal, moderate, or high — with a heat-proxy list of the likely culprits when the system starts to strain."
+    title: "Plain-English pressure",
+    body: "Normal, moderate, or high — with hover definitions and a heat-proxy list of likely culprits when memory starts to strain."
   },
   {
     tag: "FAN",
@@ -47,7 +47,7 @@ const specs = [
   ["Chip", "Apple Silicon · M1 and later"],
   ["macOS", "13 Ventura or later"],
   ["Footprint", "Menu-bar resident · no dock icon"],
-  ["Cadence", "Refreshes every 5 seconds"],
+  ["Cadence", "Selectable · 1s / 5s / 30s"],
   ["Signing", "Developer ID · notarized"],
   ["License", "Open source · MIT"]
 ];
@@ -80,7 +80,7 @@ export default function Home() {
         <div className="heroCopy">
           <span className="eyebrow">
             <span className="pulse" aria-hidden="true" />
-            Live system monitor for macOS
+            Apple Silicon telemetry for developers
           </span>
           <h1>
             Watch your
@@ -89,8 +89,9 @@ export default function Home() {
           </h1>
           <p>
             CPU, unified memory, GPU, pressure, and fans — read straight off the
-            silicon and drawn in a single menu-bar panel. No dock icon. No
-            window. Requires an Apple Silicon Mac.
+            silicon and drawn in one roomier menu-bar panel. Pick a refresh
+            cadence, inspect P/E core activity, and hover any metric for a
+            plain-English definition.
           </p>
 
           <LiveTelemetry />
@@ -106,7 +107,7 @@ export default function Home() {
             </a>
           </div>
           <p className="microline">
-            Free · Apple Silicon required · macOS 13+ · v{version} · Signed
+            Free · Apple Silicon required · macOS 13+ · v{version}{" "}· Signed
             &amp; notarized
           </p>
         </div>
@@ -114,23 +115,18 @@ export default function Home() {
         <div className="product" aria-label="MenuStat panel preview">
           <div className="productGlow" aria-hidden="true" />
           <div className="panelFrame">
-            <div className="panelChrome" aria-hidden="true">
-              <span />
-              <span />
-              <span />
-            </div>
             <img
               src="/menustat-panel.png"
-              alt="The MenuStat panel showing CPU, memory, GPU, pressure, and fan metrics"
+              alt="MenuStat 0.4.0 showing refresh controls, P/E core CPU activity, hover help, and top app rows"
             />
           </div>
           <div className="floatChip chipA" aria-hidden="true">
             <span className="chipDot" />
-            host_statistics()
+            1s / 5s / 30s
           </div>
           <div className="floatChip chipB" aria-hidden="true">
             <span className="chipDot" />
-            AppleSMC · F0Ac
+            P/E cores
           </div>
         </div>
       </section>
@@ -140,8 +136,9 @@ export default function Home() {
           <span className="kicker">// Signals</span>
           <h2>Five readouts. One glance.</h2>
           <p>
-            The whole machine, color-coded the way the app shows it. Tap any
-            metric for the full breakdown underneath.
+            The whole machine, color-coded the way the app shows it. Choose the
+            sections you care about, then open any metric for the full breakdown
+            underneath.
           </p>
         </div>
         <div className="metricGrid">
@@ -185,9 +182,9 @@ export default function Home() {
           <span className="howPulse" aria-hidden="true" />
           <h3>Always current</h3>
           <p>
-            Headline metrics refresh every five seconds. The heavier per-app
-            sampling only runs while the panel is open, so it does not work when
-            you are not looking.
+            Pick a 1s cadence while debugging, 5s for balanced monitoring, or
+            30s for quiet residency. Heavier per-app sampling only runs while
+            the panel is open.
           </p>
         </div>
       </section>
@@ -220,7 +217,7 @@ export default function Home() {
             </a>
           </div>
           <p className="microline">
-            v{version} · Apple Silicon required · Intel Macs show an unsupported
+            v{version}{" "}· Apple Silicon required · Intel Macs show an unsupported
             alert · macOS 13+ · Developer ID signed &amp; notarized
           </p>
         </div>
