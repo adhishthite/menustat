@@ -59,6 +59,44 @@ final class CPUSnapshotTests: XCTestCase {
         XCTAssertEqual(SystemSampler.cpuTickDelta(current: 15, previous: 10), 5)
         XCTAssertEqual(SystemSampler.cpuTickDelta(current: 3, previous: UInt32.max - 1), 5)
     }
+
+    func testCoreTypesAreCarriedWithPerCoreSamples() {
+        let snapshot = CPUSnapshot(
+            total: 0.5,
+            user: 0.3,
+            system: 0.2,
+            idle: 0.5,
+            nice: 0,
+            perCore: [0.2, 0.3, 0.1, 0.1],
+            coreTypes: [.performance, .performance, .efficiency, .efficiency]
+        )
+
+        XCTAssertEqual(snapshot.coreTypes, [.performance, .performance, .efficiency, .efficiency])
+    }
+}
+
+final class MemoryPressureTests: XCTestCase {
+    private func make(usedPercent: Double) -> MemorySnapshot {
+        let total: UInt64 = 1000
+        return MemorySnapshot(
+            total: total,
+            used: UInt64(usedPercent * Double(total)),
+            free: 0,
+            active: 0,
+            inactive: UInt64((1 - usedPercent) * Double(total)),
+            wired: 0,
+            compressed: 0,
+            speculative: 0,
+            pageSize: 16
+        )
+    }
+
+    func testPressureThresholdsTrackUsedMemory() {
+        XCTAssertEqual(SystemSampler.pressure(for: make(usedPercent: 0.69)), .normal)
+        XCTAssertEqual(SystemSampler.pressure(for: make(usedPercent: 0.70)), .moderate)
+        XCTAssertEqual(SystemSampler.pressure(for: make(usedPercent: 0.87)), .moderate)
+        XCTAssertEqual(SystemSampler.pressure(for: make(usedPercent: 0.88)), .high)
+    }
 }
 
 final class AppUsageTests: XCTestCase {

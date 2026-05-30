@@ -52,4 +52,22 @@ final class GPUReaderTests: XCTestCase {
         XCTAssertEqual(snapshot.statusTitle, "Unavailable")
         XCTAssertNotNil(snapshot.message)
     }
+
+    func testParsesNestedCountersAndClampsPercentages() {
+        let snapshot = GPUReader().parseIORegistryProperties([
+            "SomeNestedDictionary": [
+                "Device Utilization %": 125,
+                "Renderer Utilization %": -10,
+                "Tiler Utilization %": 50
+            ],
+            "model": Data("Apple M4\0".utf8),
+            "gpu-core-count": "16"
+        ])
+
+        XCTAssertEqual(snapshot.utilization ?? 0, 1, accuracy: 0.001)
+        XCTAssertEqual(snapshot.rendererUtilization ?? 0, 0, accuracy: 0.001)
+        XCTAssertEqual(snapshot.tilerUtilization ?? 0, 0.5, accuracy: 0.001)
+        XCTAssertEqual(snapshot.coreCount, 16)
+        XCTAssertEqual(snapshot.model, "Apple M4")
+    }
 }

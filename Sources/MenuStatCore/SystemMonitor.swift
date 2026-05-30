@@ -101,12 +101,37 @@ public struct CPUSnapshot {
     public let idle: Double
     public let nice: Double
     public let perCore: [Double]
+    public let coreTypes: [CPUCoreType]
+
+    public init(
+        total: Double,
+        user: Double,
+        system: Double,
+        idle: Double,
+        nice: Double,
+        perCore: [Double],
+        coreTypes: [CPUCoreType] = []
+    ) {
+        self.total = total
+        self.user = user
+        self.system = system
+        self.idle = idle
+        self.nice = nice
+        self.perCore = perCore
+        self.coreTypes = coreTypes
+    }
 
     public var busiestCore: Double {
         perCore.max() ?? total
     }
 
     public static let empty = CPUSnapshot(total: 0, user: 0, system: 0, idle: 1, nice: 0, perCore: [])
+}
+
+public enum CPUCoreType: String {
+    case performance
+    case efficiency
+    case unknown
 }
 
 public struct MemorySnapshot {
@@ -332,8 +357,11 @@ public final class SystemSampler {
     private var processNameCache: [Int32: String] = [:]
     private let fanReader = SMCFanReader()
     private let gpuReader = GPUReader()
+    private let coreTypes: [CPUCoreType]
 
-    public init() {}
+    public init() {
+        coreTypes = Self.readCPUCoreTypes()
+    }
 
     public func sample(includeAppUsage: Bool = true) -> SystemSnapshot {
         let memory = sampleMemory()
@@ -349,7 +377,7 @@ public final class SystemSampler {
             coreCount: ProcessInfo.processInfo.processorCount,
             memory: memory,
             gpu: gpuReader.readGPU(),
-            pressure: pressure(for: memory),
+            pressure: Self.pressure(for: memory),
             fans: fanReader.readFans(),
             apps: apps,
             uptime: ProcessInfo.processInfo.systemUptime,
@@ -379,13 +407,15 @@ public final class SystemSampler {
 
         guard total > 0 else { return .empty }
         let perCore = samplePerCoreCPU()
+        let snapshotCoreTypes = coreTypes.count == perCore.count ? coreTypes : []
         return CPUSnapshot(
             total: max(0, min(1, (total - idle) / total)),
             user: user / total,
             system: system / total,
             idle: idle / total,
             nice: nice / total,
-            perCore: perCore
+            perCore: perCore,
+            coreTypes: snapshotCoreTypes
         )
     }
 
@@ -438,6 +468,102 @@ public final class SystemSampler {
         Double(current &- previous)
     }
 
+    private static func readCPUCoreTypes() -> [CPUCoreType] {
+        let ioRegistryTypes = readCPUCoreTypesFromIODeviceTree()
+        if !ioRegistryTypes.isEmpty {
+            return ioRegistryTypes
+        }
+        return readCPUCoreTypesFromSysctl()
+    }
+
+    private static func readCPUCoreTypesFromIODeviceTree() -> [CPUCoreType] {
+        let cpus = IORegistryEntryFromPath(kIOMainPortDefault, "IODeviceTree:/cpus")
+        guard cpus != 0 else { return [] }
+        defer { IOObjectRelease(cpus) }
+
+        var iterator: io_iterator_t = 0
+        guard IORegistryEntryGetChildIterator(cpus, kIODeviceTreePlane, &iterator) == KERN_SUCCESS else {
+            return []
+        }
+        defer { IOObjectRelease(iterator) }
+
+        var mapped: [(id: Int, type: CPUCoreType)] = []
+        while case let child = IOIteratorNext(iterator), child != 0 {
+            defer { IOObjectRelease(child) }
+            guard let logicalID = intProperty(named: "logical-cpu-id", from: child),
+                  let clusterType = coreTypeProperty(named: "cluster-type", from: child)
+            else { continue }
+            mapped.append((logicalID, clusterType))
+        }
+
+        return mapped.sorted { $0.id < $1.id }.map(\.type)
+    }
+
+    private static func readCPUCoreTypesFromSysctl() -> [CPUCoreType] {
+        guard let perfLevels = sysctlInt("hw.nperflevels"), perfLevels > 0 else { return [] }
+
+        var types: [CPUCoreType] = []
+        for index in 0..<perfLevels {
+            guard let count = sysctlInt("hw.perflevel\(index).logicalcpu"), count > 0 else { continue }
+            let name = sysctlString("hw.perflevel\(index).name")?.lowercased() ?? ""
+            let type: CPUCoreType = if name.contains("performance") {
+                .performance
+            } else if name.contains("efficiency") {
+                .efficiency
+            } else {
+                .unknown
+            }
+            types.append(contentsOf: Array(repeating: type, count: count))
+        }
+        return types
+    }
+
+    private static func intProperty(named name: String, from entry: io_registry_entry_t) -> Int? {
+        guard let value = IORegistryEntryCreateCFProperty(entry, name as CFString, kCFAllocatorDefault, 0)?
+            .takeRetainedValue()
+        else { return nil }
+        return (value as? NSNumber)?.intValue
+    }
+
+    private static func coreTypeProperty(named name: String, from entry: io_registry_entry_t) -> CPUCoreType? {
+        guard let value = IORegistryEntryCreateCFProperty(entry, name as CFString, kCFAllocatorDefault, 0)?
+            .takeRetainedValue()
+        else { return nil }
+
+        let text: String? = if let string = value as? String {
+            string
+        } else if let data = value as? Data {
+            String(data: data, encoding: .utf8)
+        } else {
+            nil
+        }
+
+        switch text?.trimmingCharacters(in: .controlCharacters).uppercased() {
+        case "P": return .performance
+        case "E": return .efficiency
+        default: return .unknown
+        }
+    }
+
+    private static func sysctlInt(_ name: String) -> Int? {
+        var value = 0
+        var size = MemoryLayout<Int>.stride
+        let result = sysctlbyname(name, &value, &size, nil, 0)
+        return result == 0 ? value : nil
+    }
+
+    private static func sysctlString(_ name: String) -> String? {
+        var size = 0
+        guard sysctlbyname(name, nil, &size, nil, 0) == 0, size > 0 else { return nil }
+
+        var buffer = Array(repeating: CChar(0), count: size)
+        let result = buffer.withUnsafeMutableBufferPointer {
+            sysctlbyname(name, $0.baseAddress, &size, nil, 0)
+        }
+        guard result == 0 else { return nil }
+        return String(cString: buffer)
+    }
+
     private func sampleMemory() -> MemorySnapshot {
         var stats = vm_statistics64()
         var count = mach_msg_type_number_t(MemoryLayout<vm_statistics64>.stride / MemoryLayout<integer_t>.stride)
@@ -476,7 +602,7 @@ public final class SystemSampler {
         )
     }
 
-    private func pressure(for memory: MemorySnapshot) -> MemoryPressure {
+    static func pressure(for memory: MemorySnapshot) -> MemoryPressure {
         switch memory.usedPercent {
         case 0..<0.70:
             .normal
@@ -493,9 +619,9 @@ public final class SystemSampler {
         let previousUsage = previousProcessUsage
         var currentUsage: [Int32: ProcessUsageSample] = [:]
 
-        var grouped: [String: (cpu: Double, memory: UInt64)] = [:]
         let processIdentifiers = allProcessIdentifiers()
         var livePIDs = Set<Int32>()
+        var records: [ProcessUsageRecord] = []
 
         for pid in processIdentifiers {
             guard let sample = processUsage(for: pid) else { continue }
@@ -508,36 +634,19 @@ public final class SystemSampler {
 
             let name = appName(for: pid)
             guard !name.isEmpty else { continue }
-
-            let cpu = cpuPercent(
-                for: sample,
-                previous: previousUsage[pid],
-                previousDate: previousDate,
-                now: now
-            )
-            let current = grouped[name] ?? (cpu: 0, memory: 0)
-            grouped[name] = (cpu: current.cpu + cpu, memory: current.memory + sample.memoryBytes)
+            records.append(ProcessUsageRecord(pid: pid, name: name, sample: sample))
         }
 
         previousProcessUsage = currentUsage
         previousProcessSampleDate = now
         pruneProcessNameCache(livePIDs: livePIDs)
 
-        let apps = grouped.map { name, usage in
-            let memoryContribution = totalMemory > 0 ? (Double(usage.memory) / Double(totalMemory)) * 100 : 0
-            let heatScore = usage.cpu + (memoryContribution * 0.35)
-            return AppUsage(
-                name: name,
-                cpuPercent: usage.cpu,
-                memoryBytes: usage.memory,
-                heatScore: heatScore
-            )
-        }
-
-        let snapshot = AppUsageSnapshot(
-            topCPU: Array(apps.sorted { $0.cpuPercent > $1.cpuPercent }.prefix(10)),
-            topMemory: Array(apps.sorted { $0.memoryBytes > $1.memoryBytes }.prefix(10)),
-            topHeat: Array(apps.sorted { $0.heatScore > $1.heatScore }.prefix(10))
+        let snapshot = Self.appUsageSnapshot(
+            records: records,
+            previousUsage: previousUsage,
+            previousDate: previousDate,
+            now: now,
+            totalMemory: totalMemory
         )
         latestAppUsage = snapshot
         return snapshot
@@ -605,7 +714,48 @@ public final class SystemSampler {
         )
     }
 
-    private func cpuPercent(
+    static func appUsageSnapshot(
+        records: [ProcessUsageRecord],
+        previousUsage: [Int32: ProcessUsageSample],
+        previousDate: Date?,
+        now: Date,
+        totalMemory: UInt64
+    ) -> AppUsageSnapshot {
+        var grouped: [String: (cpu: Double, memory: UInt64)] = [:]
+
+        for record in records {
+            let cpu = cpuPercent(
+                for: record.sample,
+                previous: previousUsage[record.pid],
+                previousDate: previousDate,
+                now: now
+            )
+            let current = grouped[record.name] ?? (cpu: 0, memory: 0)
+            grouped[record.name] = (
+                cpu: current.cpu + cpu,
+                memory: current.memory + record.sample.memoryBytes
+            )
+        }
+
+        let apps = grouped.map { name, usage in
+            let memoryContribution = totalMemory > 0 ? (Double(usage.memory) / Double(totalMemory)) * 100 : 0
+            let heatScore = usage.cpu + (memoryContribution * 0.35)
+            return AppUsage(
+                name: name,
+                cpuPercent: usage.cpu,
+                memoryBytes: usage.memory,
+                heatScore: heatScore
+            )
+        }
+
+        return AppUsageSnapshot(
+            topCPU: Array(apps.sorted { $0.cpuPercent > $1.cpuPercent }.prefix(12)),
+            topMemory: Array(apps.sorted { $0.memoryBytes > $1.memoryBytes }.prefix(12)),
+            topHeat: Array(apps.sorted { $0.heatScore > $1.heatScore }.prefix(12))
+        )
+    }
+
+    static func cpuPercent(
         for sample: ProcessUsageSample,
         previous: ProcessUsageSample?,
         previousDate: Date?,
@@ -658,7 +808,13 @@ public final class SystemSampler {
     }
 }
 
-private struct ProcessUsageSample {
+struct ProcessUsageRecord {
+    let pid: Int32
+    let name: String
+    let sample: ProcessUsageSample
+}
+
+struct ProcessUsageSample {
     let totalCPUTime: UInt64
     let memoryBytes: UInt64
 }
